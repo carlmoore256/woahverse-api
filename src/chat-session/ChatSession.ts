@@ -30,8 +30,7 @@ export const DEFAULT_CHAT_MODEL_PARAMETERS : IChatSessionParameters = {
     maxIterations: 20,
 }
 
-// if instead we changed this into a ChatSession, then the implementation of the chains 
-// could be abstracted away from the chatbot
+
 export class ChatSession {
     
     model : ChatOpenAI;

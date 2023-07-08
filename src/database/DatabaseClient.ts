@@ -11,7 +11,7 @@ import { IUser } from './types/IUser';
 import dotenv from 'dotenv';
 dotenv.config();
 
-
+const CREATE_TABLES = './sql/create_tables.sql';
 
 export class DatabaseClient {
     public db: pg.Client;
@@ -39,7 +39,7 @@ export class DatabaseClient {
 
     public async createTables() {
         try {
-            this.tables = await this.loadSchema('./sql/create_tables.sql');
+            this.tables = await this.loadSchema(CREATE_TABLES);
             Object.values(this.tables).forEach(async (table) => {
                 // Debug.log(`Creating table ${table.name}`, LogColor.Green);
                 await this.db.query(table.createQuery);
@@ -50,7 +50,7 @@ export class DatabaseClient {
         }
     }
 
-    public async loadSchema(path: './sql/create_tables.sql'): Promise<{ [key: string]: ITable }> {
+    public async loadSchema(path: string = CREATE_TABLES): Promise<{ [key: string]: ITable }> {
         const initTables = readFileSync(path, 'utf-8');
         return await parseTables(initTables, this);
     }
@@ -156,7 +156,7 @@ export class DatabaseClient {
         }
     }
 
-    public async databaseBrowserDialog() {
+    public async interactiveBrowserDialog() {
         const choices = Object.values(this.tables).map(table => ({ value: table.name, name: table.name }));
         while (true) {
             const choice = await selectPrompt<string>([
