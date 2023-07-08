@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import DB from '../../../../database/SQLDatabase';
-import { generateId } from '../../../../utils/id';
-import { IChatSession, ChatSessionManager } from '../../../../chat-session/session';
-import { IChatbotParameters } from '../../../../chat-session/GPTChatbot';
+import { generateId } from '../../utils/id';
+import { ChatSessionManager } from '../../chat-session/ChatSessionManager';
+import { IChatbotParameters } from '../../chat-session/GPTChatbot';
 import { Handler } from 'express';
 
 const router = Router();

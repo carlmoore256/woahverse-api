@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import DB from '../../../../database/SQLDatabase';
 
 const router = Router();
 

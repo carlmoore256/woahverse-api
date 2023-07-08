@@ -7,6 +7,7 @@ import { selectPrompt, yesNoPrompt, inputPrompt } from '../cli/cli-prompts';
 import { DatabaseTable } from './DatabaseTable';
 import { Debug, LogColor } from '../utils/Debug';
 import { ITable, parseTables } from './parse-tables';
+import { IUser } from './types/IUser';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -16,13 +17,18 @@ export class DatabaseClient {
     public db: pg.Client;
     public tables: { [key: string]: ITable } = {};
     public isConnected = false;
+    public static Instance: DatabaseClient;
 
     constructor() {
         this.db = new Client({
-            // user: process.env.PG_USER,
-            // password: process.env.PG_PASSWORD,
-            // database: process.env.PG_DATABASE,
+            user: process.env.PG_USER,
+            password: process.env.PG_PASSWORD,
+            database: process.env.PG_DATABASE,
         });
+        if (DatabaseClient.Instance) {
+            throw new Error("DatabaseClient already initialized");
+        }
+        DatabaseClient.Instance = this;
     }
 
     public async connect() {
@@ -361,6 +367,19 @@ export class DatabaseClient {
     public async queryType<T>(tableName: string, query: Partial<T>): Promise<T[]> {
         const databaseTable = new DatabaseTable(this.db, tableName);
         return await databaseTable.query(query) as T[];
+    }
+
+    public async getAllUsers(): Promise<IUser[]> {
+        const res = await this.db.query(`SELECT * FROM users`);
+        return res.rows;
+    }
+
+    public async getUser(username : string) : Promise<IUser | null> {
+        const res = await this.db.query(`SELECT * FROM users WHERE username = $1`, [username]);
+        if (res.rows.length === 0) {
+            return null;
+        }
+        return res.rows[0];
     }
 }
 

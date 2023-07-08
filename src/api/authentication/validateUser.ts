@@ -1,17 +1,17 @@
 import { JWT_SECRET } from '../../definitions';
 import bcrypt from 'bcrypt';
-import DB from '../../database/SQLDatabase';
+import DatabaseClient from '../../database/DatabaseClient';
 // import { IUser } from '../../database/types';
 import jwt from 'jsonwebtoken';
+import { IUser } from '../../database/types/IUser';
 
 export function validateUser(username : string, password : string) : Promise<any> {
     return new Promise(async (resolve, reject) => {
-        const user = await DB.getUser(username);
+        const user = await DatabaseClient.Instance.getUser(username);
         if (!user) {
             reject("Invalid username or password");
             return;
         }
-
         const validPassword = bcrypt.compareSync(password, user.password);
 
         if (validPassword) {
@@ -37,7 +37,7 @@ export function trySignToken(username : string, password : string) : Promise<str
 export function isValidUser(username : string) : Promise<boolean> {
     return new Promise(async (resolve, reject) => {
         try {
-            const user = await DB.getUser(username);
+            const user = await DatabaseClient.Instance.getUser(username);
             resolve(user !== undefined);
         } catch (err) {
             reject(err);

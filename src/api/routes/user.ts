@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { trySignToken } from '../../../../api-common/authentication/validateUser';
+import { trySignToken } from '../authentication/validateUser';
 
 const router = Router();
 

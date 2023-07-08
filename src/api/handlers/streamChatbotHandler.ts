@@ -1,4 +1,4 @@
-import { IChatSession } from "../../chat-session/session";
+import { IChatSession } from "../../chat-session/ChatSessionManager";
 
 /*
 * This function is used to stream the chatbot's response to the client.

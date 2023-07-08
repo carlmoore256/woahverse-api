@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { IUser } from '../../../../database/types';
-import DB from '../../../../database/SQLDatabase';
+import { IUser } from '../../database/types/IUser';
+import { DatabaseClient } from '../../database/DatabaseClient';
 import bcrypt from 'bcrypt';
 
 const router = Router();
@@ -12,7 +12,8 @@ export default (parent : Router) => {
 
     router.get("/list-users", (req, res) => {
         // get all devices from the database
-        DB.getAllUsers().then((users) => {
+        
+        DatabaseClient.Instance.getAllUsers().then((users) => {
             res.send(users);
         });
     });
@@ -26,7 +27,7 @@ export default (parent : Router) => {
         // Hash the password with the salt
         user.password = bcrypt.hashSync(user.password, salt);
 
-        const success = await DB.insertUser(user);
+        const success = await DatabaseClient.Instance.insert('users', user);
         if (success) {
             res.send("User added");
         } else {
