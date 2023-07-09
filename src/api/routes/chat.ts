@@ -1,48 +1,34 @@
-import { Router, Request, Handler } from 'express';
-import { generateId } from '../../utils/id';
-import { ChatSessionManager } from '../../chat-session/ChatSessionManager';
-import { IChatSessionParameters } from '../../chat-session/ChatSession';
-import {  } from 'express';
-import { DatabaseClient } from '../../database/DatabaseClient';
+import { Router, Request, Response, Handler } from 'express';
+import { ChatSessionManager } from '../../chat/ChatSessionManager';
+import { IChatSessionParameters } from '../../chat/ChatSession';
 import Debug from '../../utils/Debug';
-import { query } from 'express-validator';
 import { validationErrorHandler } from '../handlers/error-handler';
-import { check, validationResult } from 'express-validator';
+import { check } from 'express-validator';
 import { authenticateJWT } from '../middleware/jwt';
 import { RequestWithUser } from '../middleware/jwt';
-import { ChatSession } from '../../chat-session/ChatSession';
-import {
-    ChatPromptTemplate,
-    HumanMessagePromptTemplate,
-    SystemMessagePromptTemplate,
-    MessagesPlaceholder,
-  } from "langchain/prompts";
-import { WOAH_SYSTEM_MESSAGE } from '../../definitions';
+import { ChatSession } from '../../chat/ChatSession';
+import { CHAT_SESSION_PARAMETERS } from '../../chat/chat-behavior';
 
 const router = Router();
 
-const chatbotParameters : IChatSessionParameters = {
-    temperature: 1.0,
-    modelName: "gpt-3.5-turbo",
-    maxIterations: 20,
-    prompt : ChatPromptTemplate.fromPromptMessages([
-        SystemMessagePromptTemplate.fromTemplate(WOAH_SYSTEM_MESSAGE),
-        new MessagesPlaceholder("history"),
-        HumanMessagePromptTemplate.fromTemplate("{input}"),
-    ])
-}
-
 const SESSION_MANAGER = new ChatSessionManager({
-    chatbotParameters,
+    chatbotParameters : CHAT_SESSION_PARAMETERS,
     envAPIKey : "WOAHVERSE_OPENAI_API_KEY",
     monitorInterval : 1000 * 60 * 10 // 10 minutes
 });
 
 
+const sendHistory = async (req : Request, res : Response, offset? : number) => {
+    const session = SESSION_MANAGER.getSession(req.query.sessionId as string); 
+    const limit = parseInt(req.query.limit as string) || 30;
+    const history = await session.getMessageHistory(limit, offset);
+    res.send({ history });    
+}
+
 /**
  * Ensures the client's request for a chat session exists, and that the client is authorized to access it.
  */
-const existsAndAuthorized : Handler = async (req, res, next) => {
+const sessionExistsAndAuthorized : Handler = async (req, res, next) => {
     if (!ChatSession.existsInDatabase(req.query.sessionId as string)) {
         return res.status(400).send({ "error" : "session-not-found" });
     }
@@ -53,76 +39,55 @@ const existsAndAuthorized : Handler = async (req, res, next) => {
 }
 
 
-const handleNewSession : Handler = async (req, res, next) => {
+/**
+ * Creates a new chat session with the client wallet address, and returns the session id
+ */
+const handleNewSession : Handler = async (req, res) => {
     try {
-        // create a session with the user wallet address 
         const session = await SESSION_MANAGER.createSession((req as RequestWithUser).user.address);
         res.send({ sessionId : session.id });
-        
     } catch (e) {
-        // will throw an error if it can't insert into database
         Debug.logError(e);
         res.status(500).send({ "error" : JSON.stringify(e) });
     }
 }
 
+/**
+ * Sends a message to the chat session
+ */
 const handleMessage : Handler = async (req, res) => {
-
-    // const insertRes = await DatabaseClient.Instance.query(
-    //     `INSERT INTO messages (id, conversation_id, message) VALUES ($1, $2, $3)`, 
-    //     [generateId(12), req.query.sessionId, req.query.message]
-    // );
-
-    // if (!insertRes) {
-    //     res.status(500).send({ "error" : "database-error" });
-    //     return;
-    // }
-
-
-
-
-
-    // here we must authenticate with bearer token
-    // to make sure requester is owner of session
-    const sessionId = req.query.sessionId; // <- INSTEAD OF THIS USE THE JWT BEARER TOKEN
-    const message = req.query.message;
-
-    // if (!SESSION_MANAGER.hasActiveSession(sessionId as string)) return sessionNotFound(res);
-    // const session = SESSION_MANAGER.getSession(sessionId as string);
-    // if (!session) return sessionNotFound(res);
-
-    session.streamResponseToClient(message as string, res);
+    try {
+        const session = SESSION_MANAGER.getSession(req.query.sessionId as string);
+        session.streamResponseToClient(req.query.message as string, res);
+    } catch (e) {
+        Debug.logError(e);
+        res.status(500).send({ "error" : `Failed to get session ${req.query.sessionId}` });
+    }
 }
 
-
+/**
+ * Returns the chat session's message history
+ */
 const handleSesssionHistory : Handler = async (req, res) => {
-
-    const sessionId = req.query.sessionId;
-
-    if (!ChatSession.existsInDatabase(sessionId as string)) {
-        return res.status(404).send({ "error" : "session-not-found" });
+    try {
+        const offset = parseInt(req.query.offset as string) || 0;
+        sendHistory(req, res, offset);
+    } catch (e) {
+        Debug.logError(e);
+        res.status(500).send({ "error" : `Failed to get session ${req.query.sessionId}` });
     }
-
-    if (!ChatSession.verifyOwnership(sessionId as string, (req as RequestWithUser).user.address)) {
-            return res.status(401).send({ "error" : "unauthorized" });
-    }
-
-    const session = SESSION_MANAGER.getSession(sessionId as string);
-    if (!session) {
-        return res.status(400).send({ "error" : "session-not-found" });
-    }
-
-    const history = await DatabaseClient.Instance.queryRows(
-        `SELECT * FROM messages WHERE conversation_id = $1`,
-        [sessionId]
-    );
-
-    if (!history) {
-        return res.status(404).send({ "error" : "No conversation history found" });
-    }
-
-    res.send(history);
 }
+
+
+const handleLoadSession : Handler = async (req, res, next) => {
+    try {
+        sendHistory(req, res);
+    } catch (e) {
+        Debug.logError(e);
+        res.status(500).send({ "error" : `Failed to get session ${req.query.sessionId}` });
+    }
+}
+    
 
 
 
@@ -135,19 +100,36 @@ export default (parent : Router) => {
         handleNewSession
     );
 
+    // loads the session, and returns the history
+    router.get("/load-session",
+        authenticateJWT,
+        check('sessionId')
+            .exists().not().isEmpty().withMessage("sessionId is required")
+            .escape(),
+        check('limit') // optional but must be numeric
+            .optional()
+            .isNumeric().withMessage("limit must be numeric"),
+        validationErrorHandler,
+        sessionExistsAndAuthorized,
+        handleLoadSession
+    );
+
     router.get("/session-history", 
         authenticateJWT, 
         check('sessionId')
             .exists().not().isEmpty().withMessage("sessionId is required")
             .escape(),
+        check('limit') // optional but must be numeric
+            .optional()
+            .isNumeric().withMessage("limit must be numeric"),
+        check('offset') // optional but must be numeric
+            .optional()
+            .isNumeric().withMessage("offset must be numeric"),
         validationErrorHandler,
-        existsAndAuthorized,
+        sessionExistsAndAuthorized,
         handleSesssionHistory
     );
 
-    // check('sessionId').custom(() => {})
-    // Use express validator to make sure everything checks out
-    // also check if there is a JWT bearer token
     router.get("/message",
         authenticateJWT,
         check('sessionId')
@@ -157,7 +139,7 @@ export default (parent : Router) => {
             .exists().not().isEmpty().withMessage("message is required")
             .trim().escape(),
         validationErrorHandler,
-        existsAndAuthorized,
+        sessionExistsAndAuthorized,
         handleMessage
     );
 

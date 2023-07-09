@@ -30,6 +30,9 @@ export class ChatSessionManager {
         this.monitorInterval = parameters.monitorInterval;
     }
 
+    /**
+     * Creates a new session from a given userId
+     */
     async createSession(userId : string) : Promise<ChatSession> {
         const newSession : ChatSession = new ChatSession(
             userId,
@@ -74,6 +77,10 @@ export class ChatSessionManager {
         return newSession; 
     }
 
+    public async updateParameters(sessionParameters : IChatSessionParameters) {
+        this.sessionParameters = sessionParameters;
+    }
+
     private monitorSessions() {
         setInterval(() => {
             const now = new Date();
@@ -90,9 +97,9 @@ export class ChatSessionManager {
         return userId in this.activeSessions;
     }
 
-    public getSession(userId : string) : ChatSession | null {
+    public getSession(userId : string) : ChatSession {
         if (userId in this.activeSessions == false) {
-            return null;
+            throw new Error("Session does not exist.");
         }
         return this.activeSessions[userId];
     }

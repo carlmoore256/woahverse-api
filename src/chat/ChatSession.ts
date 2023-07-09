@@ -15,6 +15,7 @@ import { generateId } from '../utils/id';
 import { Debug } from '../utils/Debug';
 import dotenv from "dotenv";
 import { Response } from "express";
+import { off } from 'process';
 
 dotenv.config();
 
@@ -214,10 +215,21 @@ export class ChatSession {
         });
     }
 
-    public async getMessageHistory() : Promise<IChatMessage[]> {
+
+    public async getMessageHistory(limit : number, offset? : number) : Promise<IChatMessage[]> {
+        offset = offset || 0;
         const messages = await DatabaseClient.Instance.queryRows(
-            `SELECT id, message, created_at, role FROM chat_messages WHERE chat_session_id = $1`,
-            [this.id]
+            `SELECT 
+                id, message, created_at, role 
+            FROM 
+                chat_messages 
+            WHERE 
+                chat_session_id = $1
+            ORDER BY
+                created_at DESC
+            LIMIT $2
+            OFFSET $3`,
+            [this.id, limit, offset]
         );
         if (!messages) throw new Error("Could not get messages from database");
         return messages.map((message) => {
@@ -261,18 +273,5 @@ export class ChatSession {
             [sessionId, userId]
         );
         return sessionExists.rowCount > 0;
-    }
-
-    public static async fromDatabase(sessionId : string) : Promise<ChatSession> {
-        const session = await DatabaseClient.Instance.query(
-            `SELECT * FROM chat_sessions WHERE id = $1`,
-            [sessionId]
-        );
-        if (session.rowCount > 0) {
-            const sessionRow = session.rows[0];
-            const parameters = await ChatSession.getParametersFromDatabase(sessionId);
-            return new ChatSession(sessionRow.user_id, parameters);
-        }
-        throw new Error(`Session ${sessionId} does not exist in database`);
     }
 }
