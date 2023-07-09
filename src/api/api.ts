@@ -1,8 +1,9 @@
-import { RESTApp } from "./APIApplication";
-import { WOAH_API_URL, WOAH_API_VERSION, WOAH_PORT } from "../constants";
+import { RESTApp } from "./RESTApp";
+import { WOAH_API_URL, WOAH_API_VERSION, WOAH_PORT } from "../definitions";
 import user from './routes/user';
 import chat from './routes/chat';
 import test from './routes/test';
+import auth from './routes/auth';
 
 export default new RESTApp({
     name: "Woahverse",

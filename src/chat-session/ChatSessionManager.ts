@@ -2,15 +2,22 @@ import { GPTChatbot, IChatbotParameters, DEFAULT_CHATBOT_PARAMETERS } from "./GP
 import { generateId } from "../utils/id";
 import { logMessage, LogColor } from "../utils/logging";
 import { Tool } from "langchain/tools";
-
-export interface IChatSession {
-    id : string;
-    userId : string; // eventually add support for this, by linking to our database
-    chatbot : GPTChatbot;
-    startedAt : Date;
-    lastMessageAt : Date | null;
-    ipAddress? : string;
-}
+import { ChatSession, IChatSessionParameters } from "./ChatSession";
+import {
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    SystemMessagePromptTemplate,
+    MessagesPlaceholder,
+  } from "langchain/prompts";
+import { WOAH_SYSTEM_MESSAGE } from "../definitions";
+// export interface IChatSession {
+//     id : string;
+//     userId : string; // eventually add support for this, by linking to our database
+//     chatbot : GPTChatbot;
+//     startedAt : Date;
+//     lastMessageAt : Date | null;
+//     ipAddress? : string;
+// }
 
 export interface IChatSesionManagerParameters {
     chatbotParameters : Partial<IChatbotParameters>;
@@ -20,7 +27,7 @@ export interface IChatSesionManagerParameters {
 
 export const DEFAULT_CHAT_SESSION_MANAGER_PARAMETERS : IChatSesionManagerParameters = {
     chatbotParameters: DEFAULT_CHATBOT_PARAMETERS,
-    envAPIKey: "OPENAI_API_KEY",
+    envAPIKey: "WOAHVERSE_OPENAI_API_KEY",
     monitorInterval: 1000 * 60 * 10, // 10 minutes
 }
 
@@ -32,40 +39,35 @@ const SESSION_ID_LENGTH = 8;
 // handles the memory of an active session of multiple clients chatting with a chatbot
 export class ChatSessionManager {
 
-    private activeSessions : Record<string, IChatSession> = {};
-    private chatbotParameters : Partial<IChatbotParameters>;
+    private activeSessions : Record<string, ChatSession> = {};
+    private sessionParameters : Partial<IChatSessionParameters>; // this could be changed
+    // by collective user input, so its mood can change temperature
     private envAPIKey : string;
     private monitorInterval : number;
 
     constructor(parameters : IChatSesionManagerParameters) {
-        this.chatbotParameters = parameters.chatbotParameters;
+        this.sessionParameters = parameters.chatbotParameters;
         this.envAPIKey = parameters.envAPIKey;
         this.monitorInterval = parameters.monitorInterval;
     }
 
-    // register a new session with an ip address
-    createSession(userId : string, tools? : Tool[]) : IChatSession | SessionRejection {
+    createSession(userId : string) : ChatSession {
 
-        if (userId in this.activeSessions) {
-            return "user-session-exists";
-        }
+        const newSession : ChatSession = new ChatSession(
+            userId,
+            { 
+                temperature: this.sessionParameters.temperature, 
+                modelName: this.sessionParameters.modelName,
+                maxIterations: this.sessionParameters.maxIterations,
+                prompt: ChatPromptTemplate.fromPromptMessages([
+                    SystemMessagePromptTemplate.fromTemplate(WOAH_SYSTEM_MESSAGE),
+                    new MessagesPlaceholder("history"),
+                    HumanMessagePromptTemplate.fromTemplate("{input}"),
+                ]),
+            },
+            process.env[this.envAPIKey] as string);
 
-        const parameters = {...this.chatbotParameters};
-        parameters.id = userId;
-
-        if (tools) {
-            parameters.tools = tools;
-        }        
-
-        const newSession : IChatSession = {
-            id: generateId(SESSION_ID_LENGTH),
-            chatbot: new GPTChatbot(parameters, process.env[this.envAPIKey] as string),
-            startedAt: new Date(),
-            lastMessageAt: null,
-            userId: userId
-        }
-
-        this.activeSessions[userId] = newSession;
+        this.activeSessions[sessionId] = newSession;
         return newSession;
     }
 
@@ -81,12 +83,12 @@ export class ChatSessionManager {
         }, this.monitorInterval);
     }
 
-    saveSession(session : IChatSession) {
+    saveSession(session : ChatSession) {
         // log the session into the database
         // session.serializeHistory();
     }
 
-    restoreSession(sessionId : string) : IChatSession | null {
+    restoreSession(sessionId : string) : ChatSession | null {
         // restore the session from the database
         return null;
     }
@@ -95,8 +97,11 @@ export class ChatSessionManager {
         return userId in this.activeSessions;
     }
 
-    getSession(userId : string) : IChatSession | null {
-        return this.activeSessions[userId] || null;
+    getSession(userId : string) : ChatSession | null {
+        if (userId in this.activeSessions == false) {
+            return null;
+        }
+        return this.activeSessions[userId];
     }
 
     endSession(userId : string) {
@@ -107,7 +112,7 @@ export class ChatSessionManager {
         this.activeSessions = {};
     }
 
-    getAllActiveSessions(timeThreshold : number | null = null) : IChatSession[] {
+    getAllActiveSessions(timeThreshold : number | null = null) : ChatSession[] {
         if (timeThreshold !== null) {
             const now = new Date();
             return Object.values(this.activeSessions).filter(session => {
@@ -119,7 +124,12 @@ export class ChatSessionManager {
 
     getTotalTokenUsage() : number {
         return this.getAllActiveSessions().reduce((total, session) => {
-            return total + session.chatbot.tokenUsage;
+            return total + session.tokenUsage;
         }, 0);
+    }
+
+    loadSession(sessionId : string) : ChatSession | null {
+        // load the session from the database
+        return null;
     }
 }

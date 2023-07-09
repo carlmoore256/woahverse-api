@@ -1,19 +1,21 @@
 CREATE TABLE IF NOT EXISTS users (
-    address TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS conversations (
-    id SERIAL PRIMARY KEY,
-    user_address TEXT,
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_address) REFERENCES users(address)
+    FOREIGN KEY(user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
-    id SERIAL PRIMARY KEY,
-    conversation_id INT,
+    id TEXT PRIMARY KEY,
+    chat_session_id TEXT,
     message TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(conversation_id) REFERENCES conversations(id)
+    embedding vector(1536),
+    role TEXT, -- human or bot
+    FOREIGN KEY(chat_session_id) REFERENCES chat_sessions(id)
 );

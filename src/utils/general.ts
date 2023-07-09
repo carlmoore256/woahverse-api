@@ -42,3 +42,7 @@ export function zeroVector(length : number): number[] {
     }
     return vector;
 }
+
+export function randomNonce() {
+    return Math.floor(Math.random() * 1000000000);
+}

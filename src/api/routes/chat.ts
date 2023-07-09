@@ -1,93 +1,121 @@
-import { Router } from 'express';
+import { Router, Request } from 'express';
 import { generateId } from '../../utils/id';
 import { ChatSessionManager } from '../../chat-session/ChatSessionManager';
 import { IChatbotParameters } from '../../chat-session/GPTChatbot';
 import { Handler } from 'express';
+import { DatabaseClient } from '../../database/DatabaseClient';
+import Debug from '../../utils/Debug';
+import { query } from 'express-validator';
+import { validationErrorHandler } from '../handlers/error-handler';
+import { check, validationResult } from 'express-validator';
+import { authenticateJWT } from '../middleware/jwt';
+import { RequestWithUser } from '../middleware/jwt';
+import { ChatSession } from '../../chat-session/ChatSession';
 
 const router = Router();
 
 const MODEL_PARAMETERS : Partial<IChatbotParameters> = {
-    temperature: 0.8,
+    temperature: 1.0,
     modelName: "gpt-3.5-turbo",
     agentType: "chat-conversational-react-description",
     maxIterations: 20,
 }
 
-const SESSION = new ChatSessionManager({
+const SESSION_MANAGER = new ChatSessionManager({
     chatbotParameters: MODEL_PARAMETERS,
     envAPIKey : "WOAHVERSE_OPENAI_API_KEY",
     monitorInterval : 1000 * 60 * 10 // 10 minutes
-})
+});
 
 
-const sessionNotFound = (res : any) => {
-    res.status(400).send({
-        "error" : "session-not-found",
-    });
-}
-
-export interface IMessageRequest {
-    sessionId : string;
-    message : string;
-}
-
-
-
-const handleNewSession : Handler = async (req, res) => {
-    // eventually have userId be authenticated
-    // with the bearer token
-    const TEMP_ID_DELETEME = generateId(12);
-
-    const session = SESSION.createSession(TEMP_ID_DELETEME);
-
-    if (typeof session === "string") {
-        res.status(400).send({ "error" : session });
-        return;
+/**
+ * Ensures the client's request for a chat session exists, and that the client is authorized to access it.
+ */
+const existsAndAuthorized : Handler = async (req, res, next) => {
+    if (!ChatSession.exists(req.query.sessionId as string)) {
+        return res.status(400).send({ "error" : "session-not-found" });
     }
+    if (!ChatSession.isSessionOwner(req.query.sessionId as string, (req as RequestWithUser).user.address)) {
+        return res.status(401).send({ "error" : "unauthorized" });
+    }
+    next();
+}
 
-    res.send({ "userId" : TEMP_ID_DELETEME });
-    // res.send({ "sessionId" : session.id })
+
+const handleNewSession : Handler = async (req, res, next) => {
+    // eventually have userId be authenticated with the bearer token
+    const sessionId = generateId(12);
+
+    try {
+        SESSION_MANAGER.createSession(sessionId);
+    
+        const insertRes = await DatabaseClient.Instance.query(`INSERT INTO chat_sessions (id) VALUES ($1)`, [sessionId]);
+    
+        if (!insertRes) {
+            res.status(500).send({ "error" : "database-error" });
+            return;
+        }
+    
+        res.send({ sessionId });
+    } catch (e) {
+        Debug.logError(e);
+        res.status(500).send({ "error" : "server-error" });
+    }
 }
 
 const handleMessage : Handler = async (req, res) => {
-    // check if req.body is valid IMessageRequest
-    if (!req.body.userId || !req.body.message) {
-        res.status(400).send({ "error" : "invalid-request" });
+
+    const insertRes = await DatabaseClient.Instance.query(
+        `INSERT INTO messages (id, conversation_id, message) VALUES ($1, $2, $3)`, 
+        [generateId(12), req.query.sessionId, req.query.message]
+    );
+
+    if (!insertRes) {
+        res.status(500).send({ "error" : "database-error" });
         return;
     }
-    
+
+
     // here we must authenticate with bearer token
     // to make sure requester is owner of session
-    const userId = req.body.userId; // <- INSTEAD OF THIS USE THE JWT BEARER TOKEN
-    const message = req.body.message;
+    const sessionId = req.query.sessionId; // <- INSTEAD OF THIS USE THE JWT BEARER TOKEN
+    const message = req.query.message;
 
-    if (!SESSION.hasActiveSession(userId)) return sessionNotFound(res);
-    const session = SESSION.getSession(userId);
+    if (!SESSION_MANAGER.hasActiveSession(sessionId as string)) return sessionNotFound(res);
+    const session = SESSION_MANAGER.getSession(sessionId as string);
     if (!session) return sessionNotFound(res);
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders(); // flush the headers to establish SSE with client
-
-    let connectionOpen = true;
-
-    const response = await session.chatbot.call(message, {}, (message) => {
-        if (connectionOpen) res.write(`data: ${JSON.stringify({message})}\n\n`);
-    });
-    
-    res.on('close', () => {
-        console.log('client dropped');
-        connectionOpen = false;
-        res.end();
-    });
-
-    // res.send({ "response" : response });
+    session.streamResponse(message as string, res);
 }
 
 
-function SSEHandler(req: any, res: any, callback : (req : any, res : any) => void) {
+const handleSesssionHistory : Handler = async (req, res) => {
 
+    const sessionId = req.query.sessionId;
+
+    if (!ChatSession.exists(sessionId as string)) {
+        return res.status(404).send({ "error" : "session-not-found" });
+    }
+
+    if (!ChatSession.isSessionOwner(sessionId as string, (req as RequestWithUser).user.address)) {
+            return res.status(401).send({ "error" : "unauthorized" });
+    }
+
+    const session = SESSION_MANAGER.getSession(sessionId as string);
+    if (!session) {
+        return res.status(400).send({ "error" : "session-not-found" });
+    }
+
+    const history = await DatabaseClient.Instance.queryRows(
+        `SELECT * FROM messages WHERE conversation_id = $1`,
+        [sessionId]
+    );
+
+    if (!history) {
+        return res.status(404).send({ "error" : "No conversation history found" });
+    }
+
+    res.send(history);
 }
 
 
@@ -96,39 +124,36 @@ export default (parent : Router) => {
 
     parent.use("/chat", router);
 
-    router.get("/", async (req, res) => res.send("Hello World"));
+    router.get("/new-session", 
+        authenticateJWT, 
+        handleNewSession
+    );
 
-    // creates a new client chat session
-    router.get("/new-session", handleNewSession);
+    router.get("/session-history", 
+        authenticateJWT, 
+        check('sessionId')
+            .exists().not().isEmpty().withMessage("sessionId is required")
+            .escape(),
+        validationErrorHandler,
+        existsAndAuthorized,
+        handleSesssionHistory
+    );
 
-    router.post("/message", handleMessage);
-
-    router.get('/streaming', (req, res) => {
-
-        // res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Connection', 'keep-alive');
-        res.flushHeaders(); // flush the headers to establish SSE with client
-    
-        let counter = 0;
-        let interValID = setInterval(() => {
-            counter++;
-            if (counter >= 10) {
-                clearInterval(interValID);
-                res.end(); // terminates SSE session
-                return;
-            }
-            res.write(`data: ${JSON.stringify({num: counter})}\n\n`); // res.write() instead of res.send()
-        }, 1000);
-    
-        // If client closes connection, stop sending events
-        res.on('close', () => {
-            console.log('client dropped me');
-            clearInterval(interValID);
-            res.end();
-        });
-    });
+    // check('sessionId').custom(() => {})
+    // Use express validator to make sure everything checks out
+    // also check if there is a JWT bearer token
+    router.get("/message",
+        authenticateJWT,
+        check('sessionId')
+            .exists().not().isEmpty().withMessage("sessionId is required")
+            .escape(),
+        check('message')
+            .exists().not().isEmpty().withMessage("message is required")
+            .trim().escape(),
+        validationErrorHandler,
+        existsAndAuthorized,
+        handleMessage
+    );
 
     // router.get("/active-sessions", async (req, res) => {
     //     res.send(JSON.stringify(SESSION.getAllActiveSessions()));

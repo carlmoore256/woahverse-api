@@ -1,7 +1,6 @@
 import https from 'https';
 import { ServerOptions } from 'https';
-import { Request, Response, NextFunction } from 'express';
-import express, { Express, json, Router } from 'express';
+import express, { Request, Response, NextFunction, Express, json, Router, Handler } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { readFileSync } from 'fs';
@@ -65,6 +64,11 @@ export class RESTApp {
         } else {
             this.app.use(router);
         }
+
+        
+        // Use error handler after all other middlewares and routes
+        this.app.use(this.errorHandler.bind(this));
+
     }
 
     getURL() {
@@ -89,6 +93,10 @@ export class RESTApp {
             });
             this.server = undefined;
         }
+    }
+
+    private errorHandler(err : any, req : Request, res : Response, next : NextFunction) {
+        res.status(err.statusCode || 500).send({ "error" : err.message });
     }
 
     private log(message : string) {
