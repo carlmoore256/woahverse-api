@@ -1,29 +1,29 @@
 import { ChatOpenAI } from 'langchain/chat_models/openai';
-import { getDDGSTextSearchTool } from '../tools/duckDuckGoSearch';
-import { initializeAgentExecutorWithOptions } from 'langchain/agents';
 import { Serialized } from "langchain/load/serializable";
-import { InputValues, LLMResult } from "langchain/schema";
-import { logMessage, LogColor } from '../utils/logging';
-import { Tool } from 'langchain/tools';
-import { AgentExecutor } from 'langchain/agents';
-import { ChainValues } from 'langchain/schema';
-import { PromptTemplate } from "langchain/prompts";
+import { InputValues, LLMResult, ChainValues } from "langchain/schema";
 import { BufferMemory } from "langchain/memory";
-import { ConversationChain } from "langchain/chains";
+import { ConversationChain, BaseChain } from "langchain/chains";
 import {
     ChatPromptTemplate,
     HumanMessagePromptTemplate,
     SystemMessagePromptTemplate,
     MessagesPlaceholder,
-  } from "langchain/prompts";
-import { Response } from "express";
+} from "langchain/prompts";
+import { logMessage, LogColor } from '../utils/logging';
 import { DatabaseClient } from "../database/DatabaseClient";
 import { generateId } from '../utils/id';
 import { Debug } from '../utils/Debug';
-
 import dotenv from "dotenv";
-import { BaseChain } from 'langchain/chains';
+import { Response } from "express";
+
 dotenv.config();
+
+export interface IChatMessage {
+    id : string;
+    message : string;
+    role : string;
+    createdAt : Date;
+}
 
 export interface IChatSessionParameters {
     temperature : number;
@@ -32,11 +32,9 @@ export interface IChatSessionParameters {
     prompt : ChatPromptTemplate;
 }
 
-const DEFAULT_MODEL = "gpt-3.5-turbo";
-
-export const DEFAULT_CHAT_MODEL_PARAMETERS : IChatSessionParameters = {
+export const DEFAULT_CHAT_SESSION_PARAMETERS : IChatSessionParameters = {
     temperature: 0.8,
-    modelName: DEFAULT_MODEL,
+    modelName: "gpt-3.5-turbo",
     maxIterations: 20,
     prompt: ChatPromptTemplate.fromPromptMessages([
         SystemMessagePromptTemplate.fromTemplate(
@@ -48,19 +46,29 @@ export const DEFAULT_CHAT_MODEL_PARAMETERS : IChatSessionParameters = {
 }
 
 
+
+const SESSION_ID_LENGTH = 16;
+
 export class ChatSession {
 
     public id : string;
     
     private model : ChatOpenAI;
-    private chain : BaseChain | null = null;
+    private _chain : BaseChain | null = null;
     
     private inputKey : string = "input";
     private outputKey : string = "text";
     
     private memory : BufferMemory | null = null;
-    public tokenUsage : number = 0;
     public lastMessageAt : Date | null = null;
+    public tokenUsage : number = 0; // we have issues setting this with streaming
+    
+    public get chain() : BaseChain {
+        if (!this._chain) throw new Error("Chain not set!");
+        return this._chain;
+    }
+
+    public set chain(chain : BaseChain) { this._chain = chain; }
 
     constructor(
         private userId : string,
@@ -68,11 +76,10 @@ export class ChatSession {
         openAIApiKey : string = process.env.OPENAI_API_KEY as string,
         private useDatabase : boolean = true) 
     {
-
-        this.id = generateId(16);
+        this.id = generateId(SESSION_ID_LENGTH);
         
+        // TODO: make sure there is a message placeholder for history
         this.memory = new BufferMemory({ returnMessages: true, memoryKey: "history" });
-        // make sure there is a message placeholder for history
 
         this.model = new ChatOpenAI({
             temperature: parameters.temperature,
@@ -89,75 +96,71 @@ export class ChatSession {
             ],
         });
 
-        const chain = new ConversationChain({
+        this.chain = new ConversationChain({
             memory: this.memory,
             prompt: parameters.prompt,
             llm: this.model,
         });
 
-        this.setChain(chain);
-
-        if (this.useDatabase) {
-            // insert this as a new record in the database
-            this.insertIntoDatabase().then((res) => {
-                Debug.log("Inserted new session into database\n" + JSON.stringify(res));
-            }).catch(err => Debug.logError(err));
-        }
+        // we don't wanna insertIntoDatabase immediately, because sometimes we need to 
+        // create a session that already exists in the database. We also want to pass 
+        // insert errors down to client as an error, so we need to call the async insert
     }
 
-    public async insertIntoDatabase() {
+
+
+    public async insertSessionIntoDatabase() {
+        const exists = await ChatSession.existsInDatabase(this.id);
+        if (exists) throw new Error("Session already exists in database!");
         return await DatabaseClient.Instance.insert('chat_sessions', {
             id: this.id,
             user_id: this.userId,
         })
     }
 
-    setChain(executor : BaseChain) { // sometimes, this might be an agentExecutor,
-        // other times, it might be a a base chain or whatever
-        this.chain = executor;
+    private async insertMessageIntoDatabase(message : string, role : string) : Promise<boolean> {
+        return await DatabaseClient.Instance.insert('chat_messages', {
+            id: generateId(SESSION_ID_LENGTH),
+            chat_session_id: this.id,
+            message,
+            role
+        })
     }
 
-    getPrompt() {
-        // return this.chain.prompt;
-    }
 
-    // call the chatbot as an agent
-    async call(message : string, additionalVariables : ChainValues = {}, streamCallback : (token : string) => void) : Promise<any> {
 
-        // this.history.push(newHistory);
-        if (!this.chain) {
-            throw new Error("Chain not set!");
-        }
-
+    /**
+     * Call the chain (send a message) with the given message and additional variables
+     */
+    public async call(message : string, additionalVariables : ChainValues = {}, streamCallback : (token : string) => void) : Promise<string | null> {
         const chainInput = {
             [this.inputKey]: message,
             ...additionalVariables
         }
 
-        // DatabaseClient.Instance.insert('')
+        if (this.useDatabase) {
+            await this.insertMessageIntoDatabase(message, "human");
+        }
 
-        // instead of awaiting, we will return the promise
-        const output = await this.chain!.call(chainInput, [{
-            handleLLMNewToken: (token) => streamCallback(token)
+        const output = await this.chain.call(chainInput, [{
+            handleLLMNewToken: (token) => {
+                this.tokenUsage += 1;
+                streamCallback(token);
+            }
         }]);
 
         // set here, so it only updates after success
         this.lastMessageAt = new Date();
-        
-        // if (output.intermediate) newHistory.intermediate = output.intermediate;
-        
-        // somehow get the token usage here, then add it to the token usage
-        
+        // check out output.intermediate
+
         if (output.output) {
-            // newHistory.output = output.output;  
             this.log(`output: ${output[this.outputKey]}`, LogColor.Cyan);
+            if (this.useDatabase) {
+                await this.insertMessageIntoDatabase(output.output, "ai");
+            }
             return output[this.outputKey];
         }
         return null;
-    }
-
-    serializeHistory() {
-        // return JSON.stringify(this.history);
     }
 
     private async handleLLMStart(llm : Serialized, prompts : string[]) {
@@ -166,9 +169,8 @@ export class ChatSession {
 
     private async handleLLMEnd(output : LLMResult) {
         if (output.llmOutput) {
-            this.log(`Yo dude, here's the output: ${JSON.stringify(output.llmOutput)}`, LogColor.Cyan);
+            this.log(`-- handleLLMEnd --: ${JSON.stringify(output.llmOutput)}`, LogColor.Cyan);
             this.tokenUsage += output.llmOutput.tokenUsage;
-
         }
     }
 
@@ -177,39 +179,32 @@ export class ChatSession {
     }
 
     private log(message : string, color : LogColor = LogColor.White) {
-        logMessage(`[CHATBOT ${this.parameters.id}] ${message}`, color);
+        logMessage(`[CHAT ${this.id}] ${message}`, color);
     }
 
-    
-    public async streamResponse(message : string, res : Response) {
+    /**
+     * Stream the LLM output to client
+     * @param message the string message to send to the LLM
+     * @param res the response object to stream the output to
+     */
+    public async streamResponseToClient(message : string, res : Response) {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Connection', 'keep-alive');
         res.flushHeaders(); // flush the headers to establish SSE with client
         let connectionOpen = true;
         const abortController = new AbortController();
-
-        // this.call(message, { signal: abortController.signal }, (reply) => {
-        //     if (connectionOpen) res.write(reply);
-            
-        // }).then((finalOutput) => {
-        //     console.log("GOT FINAL OUTPUT", finalOutput);
-        //     res.end();
-        //     return;
-        // });
         
-        // this.call(message, { signal: abortController.signal }, (reply) => {
-        this.call(message, {}, (reply) => {
+        // hooks into itself here to write the reply to the stream
+        this.call(message, {}, (reply) => { // { signal: abortController.signal }
+
             if (connectionOpen) res.write(`data: ${JSON.stringify(reply)}\n\n`);
             
         }).then((finalOutput) => {
-            // console.log("GOT FINAL OUTPUT", finalOutput);
-            // res.write(`data: ${JSON.stringify(finalOutput)}\n\n`);
             res.write("event: close\ndata: \n\n"); // add this line to send a "close" event
             res.end();
             return;
         });
-
 
         res.on('close', () => {
             console.log('client dropped - aborting chatbot call');
@@ -219,7 +214,33 @@ export class ChatSession {
         });
     }
 
-    public static async exists(sessionId : string) : Promise<boolean> {
+    public async getMessageHistory() : Promise<IChatMessage[]> {
+        const messages = await DatabaseClient.Instance.queryRows(
+            `SELECT id, message, created_at, role FROM chat_messages WHERE chat_session_id = $1`,
+            [this.id]
+        );
+        if (!messages) throw new Error("Could not get messages from database");
+        return messages.map((message) => {
+            return {
+                id: message.id,
+                message: message.message,
+                createdAt: message.created_at,
+                role: message.role
+            }
+        });
+    }
+    
+
+    // ============================================
+    // ============== STATIC METHODS ==============
+    // ============================================
+
+    /**
+     * Check if the session exists in the database
+     * @param sessionId string id of the session
+     * @returns Promise<boolean> whether the session exists
+     */
+    public static async existsInDatabase(sessionId : string) : Promise<boolean> {
         const sessionExists = await DatabaseClient.Instance.query(
             `SELECT * FROM chat_sessions WHERE id = $1`,
             [sessionId]
@@ -228,11 +249,30 @@ export class ChatSession {
     
     }
 
-    public static async isSessionOwner(sessionId : string, userId : string) : Promise<boolean> {
+    /**
+     * Check if the session exists in the database and is owned by the user
+     * @param sessionId string id of the session
+     * @param userId string id of the user
+     * @returns Promise<boolean> whether the session exists and is owned by the user
+     */
+    public static async verifyOwnership(sessionId : string, userId : string) : Promise<boolean> {
         const sessionExists = await DatabaseClient.Instance.query(
             `SELECT * FROM chat_sessions WHERE id = $1 AND user_id = $2`,
             [sessionId, userId]
         );
         return sessionExists.rowCount > 0;
+    }
+
+    public static async fromDatabase(sessionId : string) : Promise<ChatSession> {
+        const session = await DatabaseClient.Instance.query(
+            `SELECT * FROM chat_sessions WHERE id = $1`,
+            [sessionId]
+        );
+        if (session.rowCount > 0) {
+            const sessionRow = session.rows[0];
+            const parameters = await ChatSession.getParametersFromDatabase(sessionId);
+            return new ChatSession(sessionRow.user_id, parameters);
+        }
+        throw new Error(`Session ${sessionId} does not exist in database`);
     }
 }

@@ -1,8 +1,8 @@
-import { Router, Request } from 'express';
+import { Router, Request, Handler } from 'express';
 import { generateId } from '../../utils/id';
 import { ChatSessionManager } from '../../chat-session/ChatSessionManager';
-import { IChatbotParameters } from '../../chat-session/GPTChatbot';
-import { Handler } from 'express';
+import { IChatSessionParameters } from '../../chat-session/ChatSession';
+import {  } from 'express';
 import { DatabaseClient } from '../../database/DatabaseClient';
 import Debug from '../../utils/Debug';
 import { query } from 'express-validator';
@@ -11,18 +11,29 @@ import { check, validationResult } from 'express-validator';
 import { authenticateJWT } from '../middleware/jwt';
 import { RequestWithUser } from '../middleware/jwt';
 import { ChatSession } from '../../chat-session/ChatSession';
+import {
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    SystemMessagePromptTemplate,
+    MessagesPlaceholder,
+  } from "langchain/prompts";
+import { WOAH_SYSTEM_MESSAGE } from '../../definitions';
 
 const router = Router();
 
-const MODEL_PARAMETERS : Partial<IChatbotParameters> = {
+const chatbotParameters : IChatSessionParameters = {
     temperature: 1.0,
     modelName: "gpt-3.5-turbo",
-    agentType: "chat-conversational-react-description",
     maxIterations: 20,
+    prompt : ChatPromptTemplate.fromPromptMessages([
+        SystemMessagePromptTemplate.fromTemplate(WOAH_SYSTEM_MESSAGE),
+        new MessagesPlaceholder("history"),
+        HumanMessagePromptTemplate.fromTemplate("{input}"),
+    ])
 }
 
 const SESSION_MANAGER = new ChatSessionManager({
-    chatbotParameters: MODEL_PARAMETERS,
+    chatbotParameters,
     envAPIKey : "WOAHVERSE_OPENAI_API_KEY",
     monitorInterval : 1000 * 60 * 10 // 10 minutes
 });
@@ -32,10 +43,10 @@ const SESSION_MANAGER = new ChatSessionManager({
  * Ensures the client's request for a chat session exists, and that the client is authorized to access it.
  */
 const existsAndAuthorized : Handler = async (req, res, next) => {
-    if (!ChatSession.exists(req.query.sessionId as string)) {
+    if (!ChatSession.existsInDatabase(req.query.sessionId as string)) {
         return res.status(400).send({ "error" : "session-not-found" });
     }
-    if (!ChatSession.isSessionOwner(req.query.sessionId as string, (req as RequestWithUser).user.address)) {
+    if (!ChatSession.verifyOwnership(req.query.sessionId as string, (req as RequestWithUser).user.address)) {
         return res.status(401).send({ "error" : "unauthorized" });
     }
     next();
@@ -43,37 +54,32 @@ const existsAndAuthorized : Handler = async (req, res, next) => {
 
 
 const handleNewSession : Handler = async (req, res, next) => {
-    // eventually have userId be authenticated with the bearer token
-    const sessionId = generateId(12);
-
     try {
-        SESSION_MANAGER.createSession(sessionId);
-    
-        const insertRes = await DatabaseClient.Instance.query(`INSERT INTO chat_sessions (id) VALUES ($1)`, [sessionId]);
-    
-        if (!insertRes) {
-            res.status(500).send({ "error" : "database-error" });
-            return;
-        }
-    
-        res.send({ sessionId });
+        // create a session with the user wallet address 
+        const session = await SESSION_MANAGER.createSession((req as RequestWithUser).user.address);
+        res.send({ sessionId : session.id });
+        
     } catch (e) {
+        // will throw an error if it can't insert into database
         Debug.logError(e);
-        res.status(500).send({ "error" : "server-error" });
+        res.status(500).send({ "error" : JSON.stringify(e) });
     }
 }
 
 const handleMessage : Handler = async (req, res) => {
 
-    const insertRes = await DatabaseClient.Instance.query(
-        `INSERT INTO messages (id, conversation_id, message) VALUES ($1, $2, $3)`, 
-        [generateId(12), req.query.sessionId, req.query.message]
-    );
+    // const insertRes = await DatabaseClient.Instance.query(
+    //     `INSERT INTO messages (id, conversation_id, message) VALUES ($1, $2, $3)`, 
+    //     [generateId(12), req.query.sessionId, req.query.message]
+    // );
 
-    if (!insertRes) {
-        res.status(500).send({ "error" : "database-error" });
-        return;
-    }
+    // if (!insertRes) {
+    //     res.status(500).send({ "error" : "database-error" });
+    //     return;
+    // }
+
+
+
 
 
     // here we must authenticate with bearer token
@@ -81,11 +87,11 @@ const handleMessage : Handler = async (req, res) => {
     const sessionId = req.query.sessionId; // <- INSTEAD OF THIS USE THE JWT BEARER TOKEN
     const message = req.query.message;
 
-    if (!SESSION_MANAGER.hasActiveSession(sessionId as string)) return sessionNotFound(res);
-    const session = SESSION_MANAGER.getSession(sessionId as string);
-    if (!session) return sessionNotFound(res);
+    // if (!SESSION_MANAGER.hasActiveSession(sessionId as string)) return sessionNotFound(res);
+    // const session = SESSION_MANAGER.getSession(sessionId as string);
+    // if (!session) return sessionNotFound(res);
 
-    session.streamResponse(message as string, res);
+    session.streamResponseToClient(message as string, res);
 }
 
 
@@ -93,11 +99,11 @@ const handleSesssionHistory : Handler = async (req, res) => {
 
     const sessionId = req.query.sessionId;
 
-    if (!ChatSession.exists(sessionId as string)) {
+    if (!ChatSession.existsInDatabase(sessionId as string)) {
         return res.status(404).send({ "error" : "session-not-found" });
     }
 
-    if (!ChatSession.isSessionOwner(sessionId as string, (req as RequestWithUser).user.address)) {
+    if (!ChatSession.verifyOwnership(sessionId as string, (req as RequestWithUser).user.address)) {
             return res.status(401).send({ "error" : "unauthorized" });
     }
 

@@ -16,6 +16,6 @@ CREATE TABLE IF NOT EXISTS messages (
     message TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     embedding vector(1536),
-    role TEXT, -- human or bot
+    role TEXT, -- human or ai
     FOREIGN KEY(chat_session_id) REFERENCES chat_sessions(id)
 );

@@ -1,8 +1,6 @@
 import { RESTApp } from "./RESTApp";
 import { WOAH_API_URL, WOAH_API_VERSION, WOAH_PORT } from "../definitions";
-import user from './routes/user';
 import chat from './routes/chat';
-import test from './routes/test';
 import auth from './routes/auth';
 
 export default new RESTApp({
@@ -16,5 +14,5 @@ export default new RESTApp({
     },
     useJson: true,
     useCors: true,
-    routes: [chat, test]
+    routes: [chat, auth]
 });

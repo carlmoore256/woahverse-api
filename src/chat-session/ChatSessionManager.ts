@@ -1,46 +1,25 @@
-import { GPTChatbot, IChatbotParameters, DEFAULT_CHATBOT_PARAMETERS } from "./GPTChatbot";
-import { generateId } from "../utils/id";
-import { logMessage, LogColor } from "../utils/logging";
-import { Tool } from "langchain/tools";
-import { ChatSession, IChatSessionParameters } from "./ChatSession";
-import {
-    ChatPromptTemplate,
-    HumanMessagePromptTemplate,
-    SystemMessagePromptTemplate,
-    MessagesPlaceholder,
-  } from "langchain/prompts";
-import { WOAH_SYSTEM_MESSAGE } from "../definitions";
-// export interface IChatSession {
-//     id : string;
-//     userId : string; // eventually add support for this, by linking to our database
-//     chatbot : GPTChatbot;
-//     startedAt : Date;
-//     lastMessageAt : Date | null;
-//     ipAddress? : string;
-// }
+import { IChatSessionParameters, ChatSession, DEFAULT_CHAT_SESSION_PARAMETERS } from "./ChatSession";
+import { DatabaseClient } from "../database/DatabaseClient";
+
 
 export interface IChatSesionManagerParameters {
-    chatbotParameters : Partial<IChatbotParameters>;
+    chatbotParameters : IChatSessionParameters;
     envAPIKey : string;
     monitorInterval : number;
 }
 
 export const DEFAULT_CHAT_SESSION_MANAGER_PARAMETERS : IChatSesionManagerParameters = {
-    chatbotParameters: DEFAULT_CHATBOT_PARAMETERS,
+    chatbotParameters: DEFAULT_CHAT_SESSION_PARAMETERS,
     envAPIKey: "WOAHVERSE_OPENAI_API_KEY",
     monitorInterval: 1000 * 60 * 10, // 10 minutes
 }
-
-export type SessionRejection = "user-session-exists" | "user-not-registered";
-
-const SESSION_ID_LENGTH = 8;
 
 
 // handles the memory of an active session of multiple clients chatting with a chatbot
 export class ChatSessionManager {
 
     private activeSessions : Record<string, ChatSession> = {};
-    private sessionParameters : Partial<IChatSessionParameters>; // this could be changed
+    private sessionParameters : IChatSessionParameters;
     // by collective user input, so its mood can change temperature
     private envAPIKey : string;
     private monitorInterval : number;
@@ -51,27 +30,51 @@ export class ChatSessionManager {
         this.monitorInterval = parameters.monitorInterval;
     }
 
-    createSession(userId : string) : ChatSession {
-
+    async createSession(userId : string) : Promise<ChatSession> {
         const newSession : ChatSession = new ChatSession(
             userId,
-            { 
-                temperature: this.sessionParameters.temperature, 
-                modelName: this.sessionParameters.modelName,
-                maxIterations: this.sessionParameters.maxIterations,
-                prompt: ChatPromptTemplate.fromPromptMessages([
-                    SystemMessagePromptTemplate.fromTemplate(WOAH_SYSTEM_MESSAGE),
-                    new MessagesPlaceholder("history"),
-                    HumanMessagePromptTemplate.fromTemplate("{input}"),
-                ]),
-            },
-            process.env[this.envAPIKey] as string);
+            this.sessionParameters, // give the chatbot the same parameters as the session
+            process.env[this.envAPIKey] as string
+        );
 
-        this.activeSessions[sessionId] = newSession;
+        const insertRes = await newSession.insertSessionIntoDatabase();
+        if (!insertRes) {
+            throw new Error("Failed to insert session into database.");
+        }
+
+        this.activeSessions[newSession.id] = newSession;
         return newSession;
     }
 
-    monitorSessions() {
+    /**
+     * Loads an existing chat session from the database
+     */
+    async loadSession(sessionId : string) : Promise<ChatSession> {
+        // load the session from the database
+        if (!ChatSession.existsInDatabase(sessionId)) {
+            throw new Error("Session does not exist in database.");
+        }
+
+        const queryRes = await DatabaseClient.Instance.queryFirstRow(
+            "SELECT id, user_id FROM chat_sessions WHERE id = $1",
+            [sessionId]
+        ) as { id : string, user_id : string } | null;
+
+        if (queryRes === null) {
+            throw new Error("Failed to load session from database.");
+        }
+
+        const newSession = new ChatSession(
+            queryRes.user_id,
+            this.sessionParameters, // give the chatbot the same parameters as the session
+            process.env[this.envAPIKey] as string
+        );
+
+        this.activeSessions[sessionId] = newSession;
+        return newSession; 
+    }
+
+    private monitorSessions() {
         setInterval(() => {
             const now = new Date();
             for (const userId in this.activeSessions) {
@@ -83,36 +86,26 @@ export class ChatSessionManager {
         }, this.monitorInterval);
     }
 
-    saveSession(session : ChatSession) {
-        // log the session into the database
-        // session.serializeHistory();
-    }
-
-    restoreSession(sessionId : string) : ChatSession | null {
-        // restore the session from the database
-        return null;
-    }
-
-    hasActiveSession(userId : string) : Boolean {
+    public hasActiveSession(userId : string) : Boolean {
         return userId in this.activeSessions;
     }
 
-    getSession(userId : string) : ChatSession | null {
+    public getSession(userId : string) : ChatSession | null {
         if (userId in this.activeSessions == false) {
             return null;
         }
         return this.activeSessions[userId];
     }
 
-    endSession(userId : string) {
+    public endSession(userId : string) {
         delete this.activeSessions[userId];
     }
 
-    endAllSessions() {
+    public endAllSessions() {
         this.activeSessions = {};
     }
 
-    getAllActiveSessions(timeThreshold : number | null = null) : ChatSession[] {
+    public getAllActiveSessions(timeThreshold : number | null = null) : ChatSession[] {
         if (timeThreshold !== null) {
             const now = new Date();
             return Object.values(this.activeSessions).filter(session => {
@@ -122,14 +115,11 @@ export class ChatSessionManager {
         return Object.values(this.activeSessions);
     }
 
-    getTotalTokenUsage() : number {
+    public getTotalTokenUsage() : number {
         return this.getAllActiveSessions().reduce((total, session) => {
             return total + session.tokenUsage;
         }, 0);
     }
 
-    loadSession(sessionId : string) : ChatSession | null {
-        // load the session from the database
-        return null;
-    }
+
 }

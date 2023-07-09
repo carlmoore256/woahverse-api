@@ -33,7 +33,7 @@ export class DatabaseTable {
 
     const res = await this.db.query(`INSERT INTO ${this.tableName} (${keysString}) VALUES (${placeholdersString});`, values);
     if (res.rowCount === 0) {
-      return false;
+      return null;
     }
     return res;
   }

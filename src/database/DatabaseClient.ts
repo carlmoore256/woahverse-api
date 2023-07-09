@@ -306,6 +306,14 @@ export class DatabaseClient {
         return null;
     }
 
+    public async queryFirstRow(query: string, params?: any[]): Promise<any | null> {
+        const res = await this.db.query(query, params);
+        if (res.rows.length > 0) {
+            return res.rows[0];
+        }
+        return null;
+    }
+
     public async insert(tableName: string, item: any): Promise<boolean> {
         const table = this.tables[tableName];
         return await table.insert(item);
