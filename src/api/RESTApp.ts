@@ -3,6 +3,7 @@ import { ServerOptions } from 'https';
 import express, { Request, Response, NextFunction, Express, json, Router, Handler } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
 import { readFileSync } from 'fs';
 dotenv.config();
 
@@ -39,6 +40,11 @@ const getHTTPSOptions = (sslVariables : SSLVariables) : ServerOptions => {
     }
 }
 
+const corsOptions = {
+    origin: ['http://127.0.0.1:5500', 'http://localhost:1234', 'https://woahverse.com'],
+    credentials: true
+}
+
 export class RESTApp {
 
     parameters : RESTAppParameters;
@@ -52,7 +58,7 @@ export class RESTApp {
             this.app.use(json());
         }
         if (this.parameters.useCors) {
-            this.app.use(cors());
+            this.app.use(cors(corsOptions));
         }
         this.app.use(this.logMiddleware.bind(this));
 
@@ -64,6 +70,8 @@ export class RESTApp {
         } else {
             this.app.use(router);
         }
+
+        this.app.use(cookieParser());
 
         
         // Use error handler after all other middlewares and routes

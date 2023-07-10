@@ -40,6 +40,7 @@ export class ChatSessionManager {
             process.env[this.envAPIKey] as string
         );
 
+        console.log("NEW SESSION! " + newSession.id + " USER ID: " + newSession.userId);
         const insertRes = await newSession.insertSessionIntoDatabase();
         if (!insertRes) {
             throw new Error("Failed to insert session into database.");
@@ -70,7 +71,9 @@ export class ChatSessionManager {
         const newSession = new ChatSession(
             queryRes.user_id,
             this.sessionParameters, // give the chatbot the same parameters as the session
-            process.env[this.envAPIKey] as string
+            process.env[this.envAPIKey] as string,
+            true, // use database
+            sessionId
         );
 
         this.activeSessions[sessionId] = newSession;
@@ -97,9 +100,11 @@ export class ChatSessionManager {
         return userId in this.activeSessions;
     }
 
-    public getSession(userId : string) : ChatSession {
+    public async getSession(userId : string) : Promise<ChatSession> {
         if (userId in this.activeSessions == false) {
-            throw new Error("Session does not exist.");
+            // throw new Error("Session does not exist.");
+            // return null;
+            return await this.loadSession(userId);
         }
         return this.activeSessions[userId];
     }

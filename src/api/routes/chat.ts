@@ -4,7 +4,7 @@ import { IChatSessionParameters } from '../../chat/ChatSession';
 import Debug from '../../utils/Debug';
 import { validationErrorHandler } from '../handlers/error-handler';
 import { check } from 'express-validator';
-import { authenticateJWT } from '../middleware/jwt';
+import { authenticateJWT, authenticateJWTWithCookies } from '../middleware/jwt';
 import { RequestWithUser } from '../middleware/jwt';
 import { ChatSession } from '../../chat/ChatSession';
 import { CHAT_SESSION_PARAMETERS } from '../../chat/chat-behavior';
@@ -19,7 +19,7 @@ const SESSION_MANAGER = new ChatSessionManager({
 
 
 const sendHistory = async (req : Request, res : Response, offset? : number) => {
-    const session = SESSION_MANAGER.getSession(req.query.sessionId as string); 
+    const session = await SESSION_MANAGER.getSession(req.query.sessionId as string); 
     const limit = parseInt(req.query.limit as string) || 30;
     const history = await session.getMessageHistory(limit, offset);
     res.send({ history });    
@@ -44,6 +44,9 @@ const sessionExistsAndAuthorized : Handler = async (req, res, next) => {
  */
 const handleNewSession : Handler = async (req, res) => {
     try {
+        // before this can succesfully happen, we need to eth verify that the wallet address
+        // is an owner of the NFT
+        console.log("USER ADDRESS: ", (req as RequestWithUser).user.address);
         const session = await SESSION_MANAGER.createSession((req as RequestWithUser).user.address);
         res.send({ sessionId : session.id });
     } catch (e) {
@@ -57,8 +60,8 @@ const handleNewSession : Handler = async (req, res) => {
  */
 const handleMessage : Handler = async (req, res) => {
     try {
-        const session = SESSION_MANAGER.getSession(req.query.sessionId as string);
-        session.streamResponseToClient(req.query.message as string, res);
+        const session = await SESSION_MANAGER.getSession(req.body.sessionId as string);
+        session.streamResponseToClient(req.body.message as string, res);
     } catch (e) {
         Debug.logError(e);
         res.status(500).send({ "error" : `Failed to get session ${req.query.sessionId}` });
@@ -130,7 +133,7 @@ export default (parent : Router) => {
         handleSesssionHistory
     );
 
-    router.get("/message",
+    router.post("/message",
         authenticateJWT,
         check('sessionId')
             .exists().not().isEmpty().withMessage("sessionId is required")
@@ -142,9 +145,4 @@ export default (parent : Router) => {
         sessionExistsAndAuthorized,
         handleMessage
     );
-
-    // router.get("/active-sessions", async (req, res) => {
-    //     res.send(JSON.stringify(SESSION.getAllActiveSessions()));
-    // });
-
 }

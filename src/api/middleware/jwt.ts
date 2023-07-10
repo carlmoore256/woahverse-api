@@ -31,8 +31,21 @@ export function authenticateJWT(req : Request, res : Response, next : NextFuncti
     }
 }
 
-// export function signJWT(id : string) {
-//     return jwt.sign({ id }, JWT_SECRET, {
-//         expiresIn: '24h'
-//     });
-// }
+
+export function authenticateJWTWithCookies(req : Request, res : Response, next : NextFunction) {
+    const token = req.cookies.token;
+
+    if (token) {
+        jwt.verify(token, JWT_SECRET, (err : any, payload : any) => {
+            if (err) {
+                return res.sendStatus(403);
+            }
+
+            (req as RequestWithUser).user = { address: payload.address };
+            console.log("YOOOO " + (req as RequestWithUser).user.address);
+            next();
+        });
+    } else {
+        res.sendStatus(401);
+    }
+}

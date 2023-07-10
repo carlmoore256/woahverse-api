@@ -58,7 +58,7 @@ export class ChatSession {
     private _chain : BaseChain | null = null;
     
     private inputKey : string = "input";
-    private outputKey : string = "text";
+    private outputKey : string = "response";
     
     private memory : BufferMemory | null = null;
     public lastMessageAt : Date | null = null;
@@ -72,13 +72,17 @@ export class ChatSession {
     public set chain(chain : BaseChain) { this._chain = chain; }
 
     constructor(
-        private userId : string,
+        public userId : string,
         private parameters : IChatSessionParameters, 
         openAIApiKey : string = process.env.OPENAI_API_KEY as string,
-        private useDatabase : boolean = true) 
+        private useDatabase : boolean = true,
+        sessionId? : string) 
     {
-        this.id = generateId(SESSION_ID_LENGTH);
-        
+        if (!sessionId) {
+            this.id = generateId(SESSION_ID_LENGTH);
+        } else {
+            this.id = sessionId;
+        }
         // TODO: make sure there is a message placeholder for history
         this.memory = new BufferMemory({ returnMessages: true, memoryKey: "history" });
 
@@ -120,7 +124,7 @@ export class ChatSession {
     }
 
     private async insertMessageIntoDatabase(message : string, role : string) : Promise<boolean> {
-        return await DatabaseClient.Instance.insert('chat_messages', {
+        return await DatabaseClient.Instance.insert('messages', {
             id: generateId(SESSION_ID_LENGTH),
             chat_session_id: this.id,
             message,
@@ -154,10 +158,10 @@ export class ChatSession {
         this.lastMessageAt = new Date();
         // check out output.intermediate
 
-        if (output.output) {
+        if (output[this.outputKey]) {
             this.log(`output: ${output[this.outputKey]}`, LogColor.Cyan);
             if (this.useDatabase) {
-                await this.insertMessageIntoDatabase(output.output, "ai");
+                await this.insertMessageIntoDatabase(output[this.outputKey], "ai");
             }
             return output[this.outputKey];
         }
@@ -218,11 +222,12 @@ export class ChatSession {
 
     public async getMessageHistory(limit : number, offset? : number) : Promise<IChatMessage[]> {
         offset = offset || 0;
+        console.log(`Getting message history for session ${this.id} with limit ${limit} and offset ${offset}`);
         const messages = await DatabaseClient.Instance.queryRows(
             `SELECT 
                 id, message, created_at, role 
             FROM 
-                chat_messages 
+                messages 
             WHERE 
                 chat_session_id = $1
             ORDER BY
@@ -231,7 +236,11 @@ export class ChatSession {
             OFFSET $3`,
             [this.id, limit, offset]
         );
-        if (!messages) throw new Error("Could not get messages from database");
+        // if (!messages) throw new Error("Could not get messages from database");
+        if (!messages) {
+            console.log("Could not get messages from database");
+            return [];
+        }
         return messages.map((message) => {
             return {
                 id: message.id,
