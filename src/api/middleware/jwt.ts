@@ -1,6 +1,7 @@
 import jwt, { JwtPayload, VerifyCallback } from "jsonwebtoken";
 import { JWT_SECRET } from "../../definitions";
 import { Request, Response, NextFunction } from "express";
+import { Debug } from "../../utils/Debug";
 
 export interface RequestWithUser extends Request {
     user: {
@@ -18,15 +19,15 @@ export function authenticateJWT(req : Request, res : Response, next : NextFuncti
 
         jwt.verify(token, JWT_SECRET, (err : any, payload : any) => {
             if (err) {
+                Debug.log(`Client attempted to access protected route with invalid token`)
                 return res.sendStatus(403);
             }
 
-            // req.user = user;
             (req as RequestWithUser).user = { address: payload.address };
-
             next();
         });
     } else {
+        Debug.log(`Client attempted to access protected route without authorization header`);
         res.sendStatus(401);
     }
 }

@@ -1,4 +1,4 @@
-import { IChatSessionParameters, ChatSession, DEFAULT_CHAT_SESSION_PARAMETERS } from "./ChatSession";
+import { IChatSessionParameters, ChatSession, DEFAULT_CHAT_SESSION_PARAMETERS, IChatSession } from "./ChatSession";
 import { DatabaseClient } from "../database/DatabaseClient";
 
 
@@ -35,12 +35,11 @@ export class ChatSessionManager {
      */
     async createSession(userId : string) : Promise<ChatSession> {
         const newSession : ChatSession = new ChatSession(
-            userId,
+            { userId },
             this.sessionParameters, // give the chatbot the same parameters as the session
             process.env[this.envAPIKey] as string
         );
 
-        console.log("NEW SESSION! " + newSession.id + " USER ID: " + newSession.userId);
         const insertRes = await newSession.insertSessionIntoDatabase();
         if (!insertRes) {
             throw new Error("Failed to insert session into database.");
@@ -54,27 +53,14 @@ export class ChatSessionManager {
      * Loads an existing chat session from the database
      */
     async loadSession(sessionId : string) : Promise<ChatSession> {
-        // load the session from the database
-        if (!ChatSession.existsInDatabase(sessionId)) {
-            throw new Error("Session does not exist in database.");
-        }
+        const newSession = await ChatSession.loadFromDatabase(
+            sessionId, 
+            this.sessionParameters, 
+            process.env[this.envAPIKey] as string);
 
-        const queryRes = await DatabaseClient.Instance.queryFirstRow(
-            "SELECT id, user_id FROM chat_sessions WHERE id = $1",
-            [sessionId]
-        ) as { id : string, user_id : string } | null;
-
-        if (queryRes === null) {
+        if (newSession === null) {
             throw new Error("Failed to load session from database.");
         }
-
-        const newSession = new ChatSession(
-            queryRes.user_id,
-            this.sessionParameters, // give the chatbot the same parameters as the session
-            process.env[this.envAPIKey] as string,
-            true, // use database
-            sessionId
-        );
 
         this.activeSessions[sessionId] = newSession;
         return newSession; 

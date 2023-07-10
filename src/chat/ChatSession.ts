@@ -26,6 +26,13 @@ export interface IChatMessage {
     createdAt : Date;
 }
 
+export interface IChatSession {
+    id? : string;
+    userId : string;
+    createdAt? : Date;
+    title? : string | null;
+}
+
 export interface IChatSessionParameters {
     temperature : number;
     modelName : string;
@@ -53,7 +60,9 @@ const SESSION_ID_LENGTH = 16;
 export class ChatSession {
 
     public id : string;
-    
+    public userId : string;
+    public title? : string | null;
+
     private model : ChatOpenAI;
     private _chain : BaseChain | null = null;
     
@@ -72,17 +81,19 @@ export class ChatSession {
     public set chain(chain : BaseChain) { this._chain = chain; }
 
     constructor(
-        public userId : string,
+        public sessionInfo : IChatSession,
         private parameters : IChatSessionParameters, 
         openAIApiKey : string = process.env.OPENAI_API_KEY as string,
-        private useDatabase : boolean = true,
-        sessionId? : string) 
+        private useDatabase : boolean = true) 
     {
-        if (!sessionId) {
+        if (!sessionInfo.id) {
             this.id = generateId(SESSION_ID_LENGTH);
         } else {
-            this.id = sessionId;
+            this.id = sessionInfo.id;
         }
+        this.userId = sessionInfo.userId;
+        if (sessionInfo.title) this.title = sessionInfo.title;     
+
         // TODO: make sure there is a message placeholder for history
         this.memory = new BufferMemory({ returnMessages: true, memoryKey: "history" });
 
@@ -212,8 +223,7 @@ export class ChatSession {
         });
 
         res.on('close', () => {
-            console.log('client dropped - aborting chatbot call');
-            abortController.abort();
+            console.log("client dropped - aborting chatbot call")
             connectionOpen = false;
             res.end();
         });
@@ -282,5 +292,57 @@ export class ChatSession {
             [sessionId, userId]
         );
         return sessionExists.rowCount > 0;
+    }
+
+    /**
+     * Returns a list of all sessions in the database for a given user
+     */
+    public static async listSessions(userId : string) : Promise<IChatSession[]> {
+        const sessions = await DatabaseClient.Instance.queryRows(
+            `SELECT
+                id, user_id, created_at, title
+            FROM
+                chat_sessions
+            WHERE
+                user_id = $1
+            ORDER BY
+                created_at DESC`,
+            [userId]
+        );
+        if (!sessions) return [];
+        return sessions.map((session) => {
+            return {
+                id: session.id,
+                userId: session.user_id,
+                createdAt: session.created_at,
+                title: session.title
+            }
+        });
+    }
+
+    /**
+     * Load a ChatSession from the database, given a sessionId
+     */
+    public static async loadFromDatabase(
+            sessionId : string, 
+            parameters : IChatSessionParameters,
+            openAIApiKey?: string,
+            useDatabase: boolean=true) : Promise<ChatSession | null> {
+        
+        const session = await DatabaseClient.Instance.queryFirstRow(
+            `SELECT
+                id, user_id, created_at, title
+            FROM
+                chat_sessions
+            WHERE
+                id = $1`,
+            [sessionId]
+        ) as { id : string, user_id : string, title : string } | null;
+        if (!session) return null;
+        return new ChatSession({
+            id: session.id,
+            userId: session.user_id,
+            title: session.title,
+        }, parameters, openAIApiKey, useDatabase);
     }
 }

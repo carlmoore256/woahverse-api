@@ -90,8 +90,17 @@ const handleLoadSession : Handler = async (req, res, next) => {
         res.status(500).send({ "error" : `Failed to get session ${req.query.sessionId}` });
     }
 }
-    
 
+const handleListSessions : Handler = async (req, res, next) => {
+    try {
+        const sessions = await ChatSession.listSessions((req as RequestWithUser).user.address);
+        res.send({ sessions });
+    } catch (e) {
+        Debug.logError(e);
+        res.status(500).send({ "error" : `Failed to get session ${req.query.sessionId}` });
+    }
+}
+        
 
 
 export default (parent : Router) => {
@@ -131,6 +140,11 @@ export default (parent : Router) => {
         validationErrorHandler,
         sessionExistsAndAuthorized,
         handleSesssionHistory
+    );
+
+    router.get("/list-sessions",
+        authenticateJWT,
+        handleListSessions
     );
 
     router.post("/message",

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     id TEXT PRIMARY KEY,
     user_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    title TEXT,
     FOREIGN KEY(user_id) REFERENCES users(id)
 );
 
