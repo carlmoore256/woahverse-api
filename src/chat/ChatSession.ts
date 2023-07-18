@@ -1,7 +1,7 @@
 import { ChatOpenAI } from 'langchain/chat_models/openai';
 import { Serialized } from "langchain/load/serializable";
 import { InputValues, LLMResult, ChainValues } from "langchain/schema";
-import { BufferMemory } from "langchain/memory";
+import { BufferMemory, ConversationSummaryMemory } from "langchain/memory";
 import { ConversationChain, BaseChain } from "langchain/chains";
 import {
     ChatPromptTemplate,
@@ -16,6 +16,7 @@ import { Debug } from '../utils/Debug';
 import dotenv from "dotenv";
 import { Response } from "express";
 import { off } from 'process';
+import { getLLMResultTexts } from '../utils/langchain';
 
 dotenv.config();
 
@@ -31,6 +32,10 @@ export interface IChatSession {
     userId : string;
     createdAt? : Date;
     title? : string | null;
+}
+
+interface IChatSessionInfo extends IChatSession {
+    numMessages : number;
 }
 
 export interface IChatSessionParameters {
@@ -94,13 +99,11 @@ export class ChatSession {
         this.userId = sessionInfo.userId;
         if (sessionInfo.title) this.title = sessionInfo.title;     
 
-        // TODO: make sure there is a message placeholder for history
-        this.memory = new BufferMemory({ returnMessages: true, memoryKey: "history" });
-
+        
         this.model = new ChatOpenAI({
             temperature: parameters.temperature,
             modelName: parameters.modelName,
-            verbose: true,
+            verbose: false,
             streaming: true,
             openAIApiKey,
             callbacks: [
@@ -110,6 +113,32 @@ export class ChatSession {
                     handleLLMError: (err) => this.handleLLMError(err)
                 }
             ],
+        });
+
+        const hasHistory = parameters.prompt.promptMessages.some((promptMessage) => {
+            return promptMessage.inputVariables.includes("history");
+        });
+        if (!hasHistory) throw new Error("Prompt must have a history variable!");
+
+        // this.memory = new BufferMemory({ returnMessages: true, memoryKey: "history" });
+        // https://js.langchain.com/docs/modules/memory/examples/conversation_summary
+        this.memory = new ConversationSummaryMemory({ 
+            memoryKey: "history",
+            returnMessages: true,
+            llm : new ChatOpenAI({ 
+                modelName: "gpt-3.5-turbo", 
+                temperature: 0.5, 
+                openAIApiKey,
+                callbacks: [
+                    {
+                        handleLLMEnd: (output) => {
+                            this.log(`[SUMMARY LLM OUTPUT]\n${JSON.stringify(getLLMResultTexts(output))}`, 
+                                        LogColor.BrightCyan)
+                            this.tokenUsage += output.llmOutput?.tokenUsage?.totalTokens || 0;
+                        },
+                    }
+                ] 
+            }) 
         });
 
         this.chain = new ConversationChain({
@@ -128,6 +157,7 @@ export class ChatSession {
     public async insertSessionIntoDatabase() {
         const exists = await ChatSession.existsInDatabase(this.id);
         if (exists) throw new Error("Session already exists in database!");
+        console.log(`Trying to insert session ${this.id} | userId ${this.userId}`)
         return await DatabaseClient.Instance.insert('chat_sessions', {
             id: this.id,
             user_id: this.userId,
@@ -180,13 +210,19 @@ export class ChatSession {
     }
 
     private async handleLLMStart(llm : Serialized, prompts : string[]) {
-        
+        this.log(`[LLM START]\n${JSON.stringify(prompts)}`)
     }
 
     private async handleLLMEnd(output : LLMResult) {
+        
+        // expand the generations into a list of text
+        const generations : string[][] = [];
+        output.generations.forEach((generation) => {
+            generations.push(generation.map(g => g.text))
+        })
         if (output.llmOutput) {
-            this.log(`-- handleLLMEnd --: ${JSON.stringify(output.llmOutput)}`, LogColor.Cyan);
-            this.tokenUsage += output.llmOutput.tokenUsage;
+            this.log(`[LLM END]\n${generations}`, LogColor.Cyan);
+            // this.tokenUsage += output.llmOutput.tokenUsage;
         }
     }
 
@@ -194,8 +230,8 @@ export class ChatSession {
         this.log(`${err.message}`, LogColor.Red);
     }
 
-    private log(message : string, color : LogColor = LogColor.White) {
-        logMessage(`[CHAT ${this.id}] ${message}`, color);
+    private log(message : string, color : LogColor = LogColor.White, newline : boolean = true) {
+        logMessage(`${newline ? "\n" : ""}[CHAT ${this.id}] ${message}`, color);
     }
 
     /**
@@ -276,6 +312,7 @@ export class ChatSession {
             `SELECT * FROM chat_sessions WHERE id = $1`,
             [sessionId]
         );
+        console.log(`Session ${sessionId} exists in database: ${sessionExists.rowCount > 0}`);
         return sessionExists.rowCount > 0;
     
     }
@@ -287,6 +324,7 @@ export class ChatSession {
      * @returns Promise<boolean> whether the session exists and is owned by the user
      */
     public static async verifyOwnership(sessionId : string, userId : string) : Promise<boolean> {
+        console.log(`Verifying ownership of session ${sessionId} for user ${userId}`)
         const sessionExists = await DatabaseClient.Instance.query(
             `SELECT * FROM chat_sessions WHERE id = $1 AND user_id = $2`,
             [sessionId, userId]
@@ -297,7 +335,7 @@ export class ChatSession {
     /**
      * Returns a list of all sessions in the database for a given user
      */
-    public static async listSessions(userId : string) : Promise<IChatSession[]> {
+    public static async listSessions(userId : string, minLength = 1) : Promise<IChatSessionInfo[]> {
         const sessions = await DatabaseClient.Instance.queryRows(
             `SELECT
                 id, user_id, created_at, title
@@ -310,15 +348,31 @@ export class ChatSession {
             [userId]
         );
         if (!sessions) return [];
-        return sessions.map((session) => {
+        // async get all of these
+        const sessionPromises = sessions.map(async (session) => {
+            const messagesCountQuery = await DatabaseClient.Instance.queryFirstRow(`
+                SELECT
+                    COUNT(id) as message_count
+                FROM
+                    messages
+                WHERE
+                    chat_session_id = $1
+            `, [session.id]);
+            const numMessages = messagesCountQuery.message_count || 0;
+
             return {
                 id: session.id,
                 userId: session.user_id,
                 createdAt: session.created_at,
-                title: session.title
+                title: session.title,
+                numMessages
             }
         });
+
+        const sessionInfos = await Promise.all(sessionPromises);
+        return sessionInfos.filter((info) => info.numMessages >= minLength);
     }
+    
 
     /**
      * Load a ChatSession from the database, given a sessionId

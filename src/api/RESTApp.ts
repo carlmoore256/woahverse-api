@@ -16,6 +16,11 @@ interface SSLVariables {
     cert: string;
 }
 
+export interface CorsOptions {
+    useCors: boolean;
+    corsOptions?: cors.CorsOptions;
+}
+
 export interface RESTAppParameters {
     name: string;
     apiUrl: string;
@@ -23,7 +28,7 @@ export interface RESTAppParameters {
     routes: APIRoute[];
     sslVariables: SSLVariables;
     version?: string;
-    useCors?: boolean;
+    cors?: cors.CorsOptions;
     useJson?: boolean;
 }
 
@@ -40,10 +45,10 @@ const getHTTPSOptions = (sslVariables : SSLVariables) : ServerOptions => {
     }
 }
 
-const corsOptions = {
-    origin: ['http://127.0.0.1:5500', 'http://localhost:1234', 'https://woahverse.com'],
-    credentials: true
-}
+// const corsOptions = {
+//     origin: ['http://127.0.0.1:5500', 'http://localhost:1234', 'https://carlmoorexyz-dev.web.app/', 'https://woahverse.com'],
+//     credentials: true
+// }
 
 export class RESTApp {
 
@@ -57,8 +62,8 @@ export class RESTApp {
         if (this.parameters.useJson) {
             this.app.use(json());
         }
-        if (this.parameters.useCors) {
-            this.app.use(cors(corsOptions));
+        if (this.parameters.cors) {
+            this.app.use(cors(this.parameters.cors));
         }
         this.app.use(this.logMiddleware.bind(this));
 

@@ -29,11 +29,11 @@ const sendHistory = async (req : Request, res : Response, offset? : number) => {
  * Ensures the client's request for a chat session exists, and that the client is authorized to access it.
  */
 const sessionExistsAndAuthorized : Handler = async (req, res, next) => {
-    if (!ChatSession.existsInDatabase(req.query.sessionId as string)) {
-        return res.status(400).send({ "error" : "session-not-found" });
-    }
-    if (!ChatSession.verifyOwnership(req.query.sessionId as string, (req as RequestWithUser).user.address)) {
-        return res.status(401).send({ "error" : "unauthorized" });
+    let sessionId = req.query.sessionId as string || req.body.sessionId as string; // could come from either a post or get 
+    const existsAndOwns = await ChatSession.verifyOwnership(sessionId, (req as RequestWithUser).user.address);
+    if (!existsAndOwns) {
+        res.status(401).send({ "error" : "Session does not exist or belong to user" });
+        return;
     }
     next();
 }
@@ -46,8 +46,7 @@ const handleNewSession : Handler = async (req, res) => {
     try {
         // before this can succesfully happen, we need to eth verify that the wallet address
         // is an owner of the NFT
-        console.log("USER ADDRESS: ", (req as RequestWithUser).user.address);
-        const session = await SESSION_MANAGER.createSession((req as RequestWithUser).user.address);
+        const session = await SESSION_MANAGER.newSession((req as RequestWithUser).user.address);
         res.send({ sessionId : session.id });
     } catch (e) {
         Debug.logError(e);
@@ -108,6 +107,12 @@ export default (parent : Router) => {
     parent.use("/chat", router);
 
     router.get("/new-session", 
+        (req, res, next) => {
+            console.log(JSON.stringify(req.query))
+            // @ts-ignore
+            console.log(JSON.stringify(req.user))
+            next();
+        },
         authenticateJWT, 
         handleNewSession
     );
@@ -148,6 +153,10 @@ export default (parent : Router) => {
     );
 
     router.post("/message",
+        (req, res, next) => {
+            console.log("message", JSON.stringify(req.body));
+            next();
+        },
         authenticateJWT,
         check('sessionId')
             .exists().not().isEmpty().withMessage("sessionId is required")

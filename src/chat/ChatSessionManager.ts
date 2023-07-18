@@ -33,14 +33,17 @@ export class ChatSessionManager {
     /**
      * Creates a new session from a given userId
      */
-    async createSession(userId : string) : Promise<ChatSession> {
+    async newSession(userId : string) : Promise<ChatSession> {
         const newSession : ChatSession = new ChatSession(
             { userId },
             this.sessionParameters, // give the chatbot the same parameters as the session
             process.env[this.envAPIKey] as string
         );
 
+        console.log(`YOOOO NEW SESSION ${newSession.id}`);
+
         const insertRes = await newSession.insertSessionIntoDatabase();
+        console.log(`GOT INSERT RES ${insertRes}`)
         if (!insertRes) {
             throw new Error("Failed to insert session into database.");
         }

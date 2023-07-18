@@ -17,6 +17,8 @@ export function authenticateJWT(req : Request, res : Response, next : NextFuncti
     if (authHeader) {
         const token = authHeader.split(' ')[1];
 
+        console.log("token: " + token);
+
         jwt.verify(token, JWT_SECRET, (err : any, payload : any) => {
             if (err) {
                 Debug.log(`Client attempted to access protected route with invalid token`)

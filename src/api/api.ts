@@ -13,6 +13,14 @@ export default new RESTApp({
         cert: "WOAHVERSE_SSL_CERT"
     },
     useJson: true,
-    useCors: true,
+    cors: {
+        origin: [
+            'http://127.0.0.1:5500', 
+            'http://localhost:1234', 
+            'https://carlmoorexyz-dev.web.app', 
+            'https://woahverse.com'
+        ],
+        credentials: true
+    },
     routes: [chat, auth]
 });
