@@ -49,7 +49,7 @@ const handleNewSession : Handler = async (req, res) => {
         const session = await SESSION_MANAGER.newSession((req as RequestWithUser).user.address);
         res.send({ sessionId : session.id });
     } catch (e) {
-        Debug.logError(e);
+        Debug.error(e);
         res.status(500).send({ "error" : JSON.stringify(e) });
     }
 }
@@ -62,7 +62,7 @@ const handleMessage : Handler = async (req, res) => {
         const session = await SESSION_MANAGER.getSession(req.body.sessionId as string);
         session.streamResponseToClient(req.body.message as string, res);
     } catch (e) {
-        Debug.logError(e);
+        Debug.error(e);
         res.status(500).send({ "error" : `Failed to get session ${req.query.sessionId}` });
     }
 }
@@ -75,7 +75,7 @@ const handleSesssionHistory : Handler = async (req, res) => {
         const offset = parseInt(req.query.offset as string) || 0;
         sendHistory(req, res, offset);
     } catch (e) {
-        Debug.logError(e);
+        Debug.error(e);
         res.status(500).send({ "error" : `Failed to get session ${req.query.sessionId}` });
     }
 }
@@ -85,7 +85,7 @@ const handleLoadSession : Handler = async (req, res, next) => {
     try {
         sendHistory(req, res);
     } catch (e) {
-        Debug.logError(e);
+        Debug.error(e);
         res.status(500).send({ "error" : `Failed to get session ${req.query.sessionId}` });
     }
 }
@@ -95,7 +95,7 @@ const handleListSessions : Handler = async (req, res, next) => {
         const sessions = await ChatSession.listSessions((req as RequestWithUser).user.address);
         res.send({ sessions });
     } catch (e) {
-        Debug.logError(e);
+        Debug.error(e);
         res.status(500).send({ "error" : `Failed to get session ${req.query.sessionId}` });
     }
 }
