@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "tsc-watch": "./node_modules/.bin/tsc-watch",
+    "tsc-watch": "npx tsc-watch",
     "api": "node ./out/app.js",
     "api-pm2": "pm2 start ./out/app.js --name woahverse-api",
     "database-cli": "node ./out/cli/database-cli.js"

@@ -2,6 +2,8 @@ import jwt, { JwtPayload, VerifyCallback } from "jsonwebtoken";
 import { JWT_SECRET } from "../../definitions";
 import { Request, Response, NextFunction } from "express";
 import { Debug } from "../../utils/Debug";
+// import { validateUser } from "./userScope";
+import DatabaseClient from "../../database/DatabaseClient";
 
 export interface RequestWithUser extends Request {
     user: {
@@ -35,17 +37,19 @@ export function authenticateJWT(req : Request, res : Response, next : NextFuncti
 }
 
 
-export function authenticateJWTWithCookies(req : Request, res : Response, next : NextFunction) {
+export async function authenticateJWTWithCookies(req : Request, res : Response, next : NextFunction) {
     const token = req.cookies.token;
 
     if (token) {
-        jwt.verify(token, JWT_SECRET, (err : any, payload : any) => {
-            if (err) {
-                return res.sendStatus(403);
-            }
+        jwt.verify(token, JWT_SECRET, async (err : any, payload : any) => {
+            if (err) return res.sendStatus(403);
 
             (req as RequestWithUser).user = { address: payload.address };
-            console.log("YOOOO " + (req as RequestWithUser).user.address);
+            const userExists = await DatabaseClient.Instance.userExists(payload.address);
+            if (!userExists) {
+                Debug.log(`User ${payload.address} does not exist`);
+                return res.sendStatus(403);
+            }
             next();
         });
     } else {

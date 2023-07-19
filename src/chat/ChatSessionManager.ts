@@ -40,10 +40,8 @@ export class ChatSessionManager {
             process.env[this.envAPIKey] as string
         );
 
-        console.log(`YOOOO NEW SESSION ${newSession.id}`);
-
         const insertRes = await newSession.insertSessionIntoDatabase();
-        console.log(`GOT INSERT RES ${insertRes}`)
+        console.log(`Inserting new session ${JSON.stringify(insertRes)}`)
         if (!insertRes) {
             throw new Error("Failed to insert session into database.");
         }

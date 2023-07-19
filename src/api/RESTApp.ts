@@ -26,7 +26,7 @@ export interface RESTAppParameters {
     apiUrl: string;
     port: number;
     routes: APIRoute[];
-    sslVariables: SSLVariables;
+    sslVariables?: SSLVariables;
     version?: string;
     cors?: cors.CorsOptions;
     useJson?: boolean;
@@ -59,6 +59,8 @@ export class RESTApp {
      constructor(parameters : RESTAppParameters) {
         this.parameters = parameters;
         this.app = express();
+        this.app.use(cookieParser());
+        
         if (this.parameters.useJson) {
             this.app.use(json());
         }
@@ -75,8 +77,7 @@ export class RESTApp {
         } else {
             this.app.use(router);
         }
-
-        this.app.use(cookieParser());
+        
 
         
         // Use error handler after all other middlewares and routes
@@ -94,6 +95,13 @@ export class RESTApp {
 
     run() {
         this.log(`Starting API Application ${this.parameters.name} at ${this.getURL()}`);
+        if (!this.parameters.sslVariables) {
+            this.log("WARNING: SSL variables not provided, running in insecure mode");
+            this.app.listen(this.parameters.port, () => {
+                this.log(`Server is running at ${this.getURL()}`);
+            });
+            return;
+        }
         this.server = https.createServer(getHTTPSOptions(this.parameters.sslVariables), this.app).listen(this.parameters.port, () => {
             this.log(`Server is running at ${this.getURL()}`);
         });

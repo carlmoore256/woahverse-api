@@ -107,19 +107,13 @@ export default (parent : Router) => {
     parent.use("/chat", router);
 
     router.get("/new-session", 
-        (req, res, next) => {
-            console.log(JSON.stringify(req.query))
-            // @ts-ignore
-            console.log(JSON.stringify(req.user))
-            next();
-        },
-        authenticateJWT, 
+        authenticateJWTWithCookies, 
         handleNewSession
     );
 
     // loads the session, and returns the history
     router.get("/load-session",
-        authenticateJWT,
+        authenticateJWTWithCookies,
         check('sessionId')
             .exists().not().isEmpty().withMessage("sessionId is required")
             .escape(),
@@ -132,7 +126,7 @@ export default (parent : Router) => {
     );
 
     router.get("/session-history", 
-        authenticateJWT, 
+        authenticateJWTWithCookies, 
         check('sessionId')
             .exists().not().isEmpty().withMessage("sessionId is required")
             .escape(),
@@ -148,16 +142,16 @@ export default (parent : Router) => {
     );
 
     router.get("/list-sessions",
-        authenticateJWT,
+        authenticateJWTWithCookies,
         handleListSessions
     );
 
     router.post("/message",
-        (req, res, next) => {
-            console.log("message", JSON.stringify(req.body));
-            next();
-        },
-        authenticateJWT,
+        // (req, res, next) => {
+        //     console.log("message", JSON.stringify(req.body));
+        //     next();
+        // },
+        authenticateJWTWithCookies,
         check('sessionId')
             .exists().not().isEmpty().withMessage("sessionId is required")
             .escape(),

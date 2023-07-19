@@ -241,7 +241,7 @@ export class ChatSession {
      */
     public async streamResponseToClient(message : string, res : Response) {
         res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        // res.setHeader('Access-Control-Allow-Origin', '*'); // <- REVERT ME
         res.setHeader('Connection', 'keep-alive');
         res.flushHeaders(); // flush the headers to establish SSE with client
         let connectionOpen = true;

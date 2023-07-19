@@ -5,7 +5,7 @@ import DatabaseClient from '../../database/DatabaseClient';
 import jwt from 'jsonwebtoken';
 import { IUser } from '../../database/types/IUser';
 
-export function validateUser(username : string, password : string) : Promise<any> {
+export function validateUserPassword(username : string, password : string) : Promise<any> {
     return new Promise(async (resolve, reject) => {
         const user = await DatabaseClient.Instance.getUser(username);
         if (!user) {
@@ -25,7 +25,7 @@ export function validateUser(username : string, password : string) : Promise<any
 export function trySignToken(username : string, password : string) : Promise<string> {
     return new Promise(async (resolve, reject) => {
         try {
-            const user = await validateUser(username, password);
+            const user = await validateUserPassword(username, password);
             const token = jwt.sign({ id : user.id }, JWT_SECRET);
             resolve(token);
         } catch (err) {

@@ -11,7 +11,8 @@ import { IUser } from './types/IUser';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const CREATE_TABLES = './sql/create_tables.sql';
+// in windows, we have to do this because Im not able to install pgvector
+const CREATE_TABLES = process.env.PG_CREATE_TABLES || './sql/create_tables.sql';
 
 export class DatabaseClient {
     public db: pg.Client;
@@ -382,12 +383,17 @@ export class DatabaseClient {
         return res.rows;
     }
 
-    public async getUser(username : string) : Promise<IUser | null> {
-        const res = await this.db.query(`SELECT * FROM users WHERE username = $1`, [username]);
+    public async getUser(id : string) : Promise<IUser | null> {
+        const res = await this.db.query(`SELECT * FROM users WHERE id = $1`, [id]);
         if (res.rows.length === 0) {
             return null;
         }
         return res.rows[0];
+    }
+
+    public async userExists(id : string) : Promise<boolean> {
+        const res = await this.db.query(`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, [id]);
+        return res.rows[0].exists;
     }
 }
 
