@@ -12,7 +12,7 @@ let sslVariables : any = {
 }
 let apiUrl = WOAH_API_URL;
 
-if (process.env.DEV_MODE) {
+if (process.env.DEV_MODE === "true") {
     origin = [
         "http://127.0.0.1:5500",
         "http://localhost:1234",

@@ -36,7 +36,7 @@ const handleVerifyCookies : Handler = async (req, res) => {
     console.log("Setting cookie");
     res.cookie('token', token, { 
         httpOnly: true,
-        secure: false,
+        secure: true,
         sameSite: 'lax',
         maxAge: 3600000 * 24 // 24 hours
     });
