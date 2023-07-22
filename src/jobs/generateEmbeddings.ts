@@ -5,6 +5,9 @@ import Debug from "../utils/Debug.js";
 import { time } from "console";
 import ProgressBar, { ProgressBarOptions } from "progress";
 
+import dotenv from "dotenv";
+dotenv.config();
+
 const OPENAI_CLIENT = new OpenAIClient();
 
 export interface IVectorizeOptions {
@@ -35,7 +38,7 @@ export async function vectorizeText(
             const response = await OPENAI_CLIENT.embeddings(text);
             const vector = response.data[0].embedding;
             await client.query(
-                "UPDATE ${table} SET {embeddingColumn} = $1 WHERE ${idColumn} = $2",
+                `UPDATE ${table} SET ${embeddingColumn} = $1 WHERE ${idColumn} = $2`,
                 [JSON.stringify(vector), entryId]
             );
             resolve(true);
@@ -72,7 +75,7 @@ async function vectorizeBatch(
     );
     if (!rows) throw new Error(`Could not get ${table} rows`);
     const promises = rows.map((row) =>
-        vectorizeText(row, row[idColumn], client, options)
+        vectorizeText(row[textColumn], row[idColumn], client, options)
     );
     await Promise.all(promises);
 }

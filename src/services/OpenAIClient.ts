@@ -26,7 +26,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const DEFAULT_CONFIG = new Configuration({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: process.env.WOAHVERSE_OPENAI_API_KEY,
 });
 
 export class OpenAIClient {
