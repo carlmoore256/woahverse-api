@@ -21,10 +21,24 @@ export class DatabaseClient {
     public static Instance: DatabaseClient;
 
     constructor() {
+        let ssl = process.env.PG_USE_SSL as any;
+
+        if (ssl) {
+            ssl = {
+                rejectUnauthorized: true,
+                ca: readFileSync(process.env.PG_SSL_CA as string).toString()       
+            }
+        } else {
+            ssl = false;
+        }
+    
+
         this.db = new Client({
+            host: process.env.PG_HOST,
             user: process.env.PG_USER,
             password: process.env.PG_PASSWORD,
             database: process.env.PG_DATABASE,
+            ssl
         });
         if (DatabaseClient.Instance) {
             throw new Error("DatabaseClient already initialized");
