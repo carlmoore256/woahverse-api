@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from "fs";
 
 export function isNullOrEmpty(s: string | null | undefined) {
     return s == null || s == undefined || s === "";
@@ -45,4 +46,13 @@ export function zeroVector(length : number): number[] {
 
 export function randomNonce() {
     return Math.floor(Math.random() * 1000000000);
+}
+
+export function loadJSON<T>(path : string) {
+    const data = readFileSync(path, { encoding: "utf8" });
+    return JSON.parse(data) as T;
+}
+
+export function saveJSON(path : string, data : any) {
+    writeFileSync(path, JSON.stringify(data, null, 2), { encoding: "utf8" });
 }

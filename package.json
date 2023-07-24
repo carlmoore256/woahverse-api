@@ -8,7 +8,8 @@
     "api": "node ./out/app.js",
     "api-pm2": "pm2 start ./out/app.js --name woahverse-api",
     "database-cli": "node ./out/cli/database-cli.js",
-    "jobs-cli": "node ./out/cli/jobs-cli.js"
+    "jobs-cli": "node ./out/cli/jobs-cli.js",
+    "test": "node ./out/jobs/emotion/createSystemMessage.js"
   },
   "author": "Carl Moore",
   "license": "ISC",
