@@ -58,7 +58,7 @@ export class DatabaseClient {
             this.tables = await this.loadSchema(CREATE_TABLES);
             Object.values(this.tables).forEach(async (table) => {
                 // Debug.log(`Creating table ${table.name}`, LogColor.Green);
-                await this.db.query(table.createQuery);
+                // await this.db.query(table.createQuery);
             });
             Debug.log("Initialized tables", LogColor.Green);
         } catch (error) {

@@ -44,7 +44,7 @@ model ChatSessions {
 }
 
 model Emotion {
-  id                    String                  @id
+  id                    String                       @id
   name                  String
   description           String?
   embedding             Unsupported("vector(1536)")?
@@ -54,8 +54,8 @@ model Emotion {
 }
 
 model EmotionalState {
-  id                        String                      @id
-  createdAt                 DateTime?                   @default(now()) @map("created_at") @db.Timestamp(6)
+  id                        String                       @id
+  createdAt                 DateTime?                    @default(now()) @map("created_at") @db.Timestamp(6)
   prompt                    String?
   embedding                 Unsupported("vector(1536)")?
   chatSessionEmotionalState ChatSessionEmotionalState[]
@@ -93,13 +93,13 @@ model GlobalEmotionalState {
 }
 
 model Messages {
-  id            String                 @id
-  chatSessionId String?                @map("chat_session_id")
+  id            String                       @id
+  chatSessionId String?                      @map("chat_session_id")
   message       String?
-  createdAt     DateTime?              @default(now()) @map("created_at") @db.Timestamp(6)
+  createdAt     DateTime?                    @default(now()) @map("created_at") @db.Timestamp(6)
   embedding     Unsupported("vector(1536)")?
   role          String?
-  chatSessions  ChatSessions?          @relation(fields: [chatSessionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  chatSessions  ChatSessions?                @relation(fields: [chatSessionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("messages")
 }
@@ -120,6 +120,73 @@ model Users {
   chatSessions       ChatSessions[]
   friendLeaderboard  FriendLeaderboard[]
   userEmotionalState UserEmotionalState[]
+  signupSession      SignupSession[]
 
   @@map("users")
+}
+
+model SignupSession {
+  id        String    @id @default(cuid()) // stored in the cookie
+  createdAt DateTime? @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+  userId    String?   @map("user_id")
+
+  // user would represent a conversion from a signup session to a user
+  user           Users?           @relation(fields: [userId], references: [id])
+  signupResponse SignupResponse[] // the number of responses will determine whether they have completed
+  signupQuestion SignupQuestion[]
+
+  @@map("signup_session")
+}
+
+// the order of questions will be randomized
+// the progression of them will inform the model on how to build an emotional state
+// and follow up with the next question
+model SignupQuestion {
+  id              String           @id @default(cuid())
+  text            String
+  templateId      String           @map("template_id")
+  signupSessionId String           @map("signup_session_id")
+  signupSession   SignupSession    @relation(fields: [signupSessionId], references: [id])
+  signupResponse  SignupResponse[]
+  template        QuestionTemplate @relation(fields: [templateId], references: [id])
+
+  @@map("signup_question")
+}
+
+model SignupResponse {
+  id               String         @id @default(cuid())
+  text             String
+  createdAt        DateTime?      @default(now()) @map("created_at")
+  signupSessionId  String         @map("signup_session_id")
+  signupQuestionId String         @map("signup_question_id")
+  signupSession    SignupSession  @relation(fields: [signupSessionId], references: [id])
+  signupQuestion   SignupQuestion @relation(fields: [signupQuestionId], references: [id])
+
+  @@map("signup_response")
+}
+
+enum QuestionTemplateType {
+  TEXT
+  MULTIPLE_CHOICE
+
+  @@map("question_template_type")
+}
+
+enum QuestionTemplateScenario {
+  SIGNUP
+  CHAT
+
+  @@map("question_template_scenario")
+}
+
+model QuestionTemplate {
+  id             String                   @id @default(cuid())
+  text           String
+  weight         Float                    @default(1) // how important is the question
+  type           QuestionTemplateType
+  scenario       QuestionTemplateScenario
+  signupQuestion SignupQuestion[]
+
+  @@map("question_template")
 }
