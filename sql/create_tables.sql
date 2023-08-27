@@ -92,3 +92,17 @@ CREATE TABLE IF NOT EXISTS friend_leaderboard (
     FOREIGN KEY(user_id) REFERENCES users(id)
 );
 
+-- have a form that asks for users social when they sign up
+CREATE TABLE IF NOT EXISTS user_social (
+    user_id TEXT PRIMARY KEY,
+    username TEXT,
+    platform TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+
+-- exists to give a unique intro for a person
+-- one-time thing
+CREATE TABLE IF NOT EXISTS user_prompt (
+
+);

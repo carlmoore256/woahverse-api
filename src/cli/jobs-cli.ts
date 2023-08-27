@@ -9,6 +9,7 @@ import { DatabaseClient } from "../database/DatabaseClient.js";
 import { vectorizeAll, VECTORIZE_CHAT_MESSAGES } from "../jobs/generateEmbeddings.js";
 import dotenv from "dotenv";
 import Debug from "../utils/Debug.js";
+import { generate } from "../jobs/emotion/createSystemMessage.js";
 dotenv.config();
 
 export class JobsCLI {
@@ -25,6 +26,7 @@ export class JobsCLI {
                 [
                     { value: "quit", name: "[Quit]" },
                     { value: "vectorizeChat", name: "Create Embeddings for Chat Messages" },
+                    { value: "createSystemMessage", name: "Generate Emotion System Message" }
                 ],
                 "Select an option"
             );
@@ -36,6 +38,10 @@ export class JobsCLI {
                     await vectorizeAll(
                         this.dbClient,
                         VECTORIZE_CHAT_MESSAGES);
+                    break;
+                case "createSystemMessage":
+                    console.log("CREATING SYSTEM MESSAGE!");
+                    await generate(this.dbClient);
                     break;
                 default:
                     throw new Error("Invalid choice");

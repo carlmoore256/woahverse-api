@@ -2,6 +2,7 @@ import { RESTApp } from "./RESTApp";
 import { WOAH_API_URL, WOAH_API_VERSION, WOAH_PORT } from "../definitions";
 import chat from "./routes/chat";
 import auth from "./routes/auth";
+import signup from "./routes/signup";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -36,5 +37,5 @@ export default new RESTApp({
         origin,
         credentials: true,
     },
-    routes: [chat, auth],
+    routes: [chat, auth, signup],
 });

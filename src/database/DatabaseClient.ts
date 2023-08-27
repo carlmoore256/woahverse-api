@@ -41,7 +41,8 @@ export class DatabaseClient {
             ssl
         });
         if (DatabaseClient.Instance) {
-            throw new Error("DatabaseClient already initialized");
+            // throw new Error("DatabaseClient already initialized");
+            console.error("DatabaseClient already initialized")
         }
         DatabaseClient.Instance = this;
     }

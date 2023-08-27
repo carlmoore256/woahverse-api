@@ -16,6 +16,7 @@
   "dependencies": {
     "@inquirer/prompts": "^2.3.0",
     "@metamask/eth-sig-util": "^6.0.0",
+    "@prisma/client": "^5.2.0",
     "@types/bcrypt": "^5.0.0",
     "@types/cookie-parser": "^1.4.3",
     "@types/cors": "^2.8.13",
@@ -35,6 +36,7 @@
     "jsonwebtoken": "^9.0.1",
     "langchain": "^0.0.104",
     "pg": "^8.11.1",
+    "prisma": "^5.2.0",
     "progress": "^2.0.3",
     "sqlite3": "^5.1.6",
     "tsc-watch": "^6.0.4",

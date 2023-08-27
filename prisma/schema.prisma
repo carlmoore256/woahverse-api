@@ -1,0 +1,125 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+model ChatPrize {
+  id            String        @id
+  chatSessionId String?       @map("chat_session_id")
+  value         Int?
+  reason        String?
+  createdAt     DateTime?     @default(now()) @map("created_at") @db.Timestamp(6)
+  chatSessions  ChatSessions? @relation(fields: [chatSessionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("chat_prize")
+}
+
+model ChatSessionEmotionalState {
+  emotionalStateId String         @map("emotional_state_id")
+  chatSessionId    String         @map("chat_session_id")
+  chatSessions     ChatSessions   @relation(fields: [chatSessionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  emotionalState   EmotionalState @relation(fields: [emotionalStateId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([emotionalStateId, chatSessionId])
+  @@map("chat_session_emotional_state")
+}
+
+model ChatSessions {
+  id                        String                      @id
+  userId                    String?                     @map("user_id")
+  createdAt                 DateTime?                   @default(now()) @map("created_at") @db.Timestamp(6)
+  title                     String?
+  chatPrize                 ChatPrize[]
+  chatSessionEmotionalState ChatSessionEmotionalState[]
+  users                     Users?                      @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  messages                  Messages[]
+
+  @@map("chat_sessions")
+}
+
+model Emotion {
+  id                    String                  @id
+  name                  String
+  description           String?
+  embedding             Unsupported("vector(1536)")?
+  emotionalStateEmotion EmotionalStateEmotion[]
+
+  @@map("emotion")
+}
+
+model EmotionalState {
+  id                        String                      @id
+  createdAt                 DateTime?                   @default(now()) @map("created_at") @db.Timestamp(6)
+  prompt                    String?
+  embedding                 Unsupported("vector(1536)")?
+  chatSessionEmotionalState ChatSessionEmotionalState[]
+  emotionalStateEmotion     EmotionalStateEmotion[]
+  globalStateEmotion        GlobalEmotionalState?
+  userEmotionalState        UserEmotionalState[]
+
+  @@map("emotional_state")
+}
+
+model EmotionalStateEmotion {
+  emotionalStateId String         @map("emotional_state_id")
+  emotionId        String         @map("emotion_id")
+  emotion          Emotion        @relation(fields: [emotionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  emotionalState   EmotionalState @relation(fields: [emotionalStateId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([emotionalStateId, emotionId])
+  @@map("emotional_state_emotion")
+}
+
+model FriendLeaderboard {
+  id     String  @id
+  userId String? @map("user_id")
+  score  Int?
+  users  Users?  @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("friend_leaderboard")
+}
+
+model GlobalEmotionalState {
+  emotionalStateId String         @id @map("emotional_state_id")
+  emotionalState   EmotionalState @relation(fields: [emotionalStateId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("global_emotional_state")
+}
+
+model Messages {
+  id            String                 @id
+  chatSessionId String?                @map("chat_session_id")
+  message       String?
+  createdAt     DateTime?              @default(now()) @map("created_at") @db.Timestamp(6)
+  embedding     Unsupported("vector(1536)")?
+  role          String?
+  chatSessions  ChatSessions?          @relation(fields: [chatSessionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("messages")
+}
+
+model UserEmotionalState {
+  emotionalStateId String         @map("emotional_state_id")
+  userId           String         @map("user_id")
+  emotionalState   EmotionalState @relation(fields: [emotionalStateId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users            Users          @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([emotionalStateId, userId])
+  @@map("user_emotional_state")
+}
+
+model Users {
+  id                 String               @id
+  createdAt          DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
+  chatSessions       ChatSessions[]
+  friendLeaderboard  FriendLeaderboard[]
+  userEmotionalState UserEmotionalState[]
+
+  @@map("users")
+}

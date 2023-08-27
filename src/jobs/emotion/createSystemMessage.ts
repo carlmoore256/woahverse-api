@@ -8,7 +8,7 @@ import { OpenAI } from "langchain/llms/openai";
 import dotenv from "dotenv";
 dotenv.config();
 
-const DB = new DatabaseClient();
+// const DB = new DatabaseClient();
 const EMOTIONS = loadJSON<IEmotion[]>("data/emotions/emotions.json");
 
 export const WOAH_SYSTEM_MESSAGE =
@@ -38,13 +38,12 @@ async function createSystemMessage(emotionNames: string[]) {
 
     {emotionsWithDescriptions}
 
-    Based on these emotions, construct a new system message that Woah can use to start conversations with users.
-    Here is the current system message:
+    Based on these emotions that Woah is feeling opens the conversation with the following message:
     {systemMessage}
-
-    Alter the system message to be more appropriate for the emotions that Woah is feeling.
     `
     // Based on these emotions, Woah opens the conversation with the following message, but doesn't wear its heart on its sleeve:
+
+    // Alter the system message to be more appropriate for the emotions that Woah is feeling.
     // Based on these emotions, Woah would like to say the following:
 
     const prompt = PromptTemplate.fromTemplate(template);
@@ -57,8 +56,8 @@ async function createSystemMessage(emotionNames: string[]) {
 
 
     const model = new OpenAI({
-        // modelName: "text-davinci-003",
-        modelName: "gpt-3.5-turbo",
+        modelName: "text-davinci-003",
+        // modelName: "gpt-3.5-turbo",
         temperature: 0.9,
         openAIApiKey: process.env.WOAHVERSE_OPENAI_API_KEY,
     });
@@ -71,11 +70,12 @@ async function createSystemMessage(emotionNames: string[]) {
 }
 
 
-export async function main() {
-    await DB.connect();
+export async function generate(db?: DatabaseClient) {
 
-
-
+    if (!db) {
+        db = new DatabaseClient();
+    }
+    
     const template = `
     Woah feels the following emotions:
     
@@ -83,17 +83,16 @@ export async function main() {
 
     I will provide you with a few average messages that folks have been sending you. 
     Analyze the tone of the messages I will show you, and think about what emotions someone would feel if they recieved such messages.
-    Based on this judgement, please select the emotions that you think are most appropriate for the messages I will show you.
+    Based on this judgement, please select 3 of the emotions that you think are most appropriate for the messages I will show you.
     Format your response as a vaid json list of the emotions, as a value under the key "emotions".
 
     Here are the messages:
 
-    {allMessages}
-    `;
+    {allMessages}`;
 
     const prompt = PromptTemplate.fromTemplate(template);
 
-    const messages = await DB.queryRows(`
+    const messages = await db.queryRows(`
         WITH avg_vector AS (
             SELECT AVG(embedding) AS average_embedding
             FROM messages
@@ -110,7 +109,7 @@ export async function main() {
             m.role = 'human'
         ORDER BY 
             m.embedding <-> av.average_embedding
-        LIMIT 10;    
+        LIMIT 30;    
     `);
     console.log(`GOT MESSAGES ${JSON.stringify((messages as any).map((m : any) => m.message))}`);
 
@@ -137,7 +136,7 @@ export async function main() {
     await createSystemMessage(chosenEmotions);
 }
 
-main();
+generate();
 
 // as woah, you are not an all-knowing langugage model, but a langugage model with
 // a restricted scope of knowledge. You are NOT here to assist the user, you are here to
